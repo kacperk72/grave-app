@@ -318,34 +318,6 @@ npm run test:cov
 
 ---
 
-## 🤝 Współpraca
-
-### Jak Pomóc w Rozwoju?
-
-1. **Fork** repozytorium
-2. **Utwórz branch** dla swojej funkcji (`git checkout -b feature/AmazingFeature`)
-3. **Commit** zmian (`git commit -m 'Add some AmazingFeature'`)
-4. **Push** do brancha (`git push origin feature/AmazingFeature`)
-5. **Otwórz Pull Request**
-
-### Konwencje Kodowania
-
-- **TypeScript** - strict mode enabled
-- **ESLint** + **Prettier** - automatyczne formatowanie
-- **Conventional Commits** - format commit messages
-- **Tests** - minimum 80% coverage dla critical paths
-
-### Zgłaszanie Błędów
-
-Znalazłeś bug? [Otwórz issue na GitHub](https://github.com/kacperk72/grave-app/issues) z:
-
-- Opisem problemu
-- Krokami do reprodukcji
-- Oczekiwanym zachowaniem
-- Screenshotami (jeśli applicable)
-
----
-
 ## 📊 Status Projektu
 
 ### Postęp Rozwoju
@@ -379,8 +351,7 @@ Mobile App:         ░░░░░░░░░░░░░░░░░░░░
 
 ## 📄 Licencja
 
-Ten projekt jest udostępniony na licencji **MIT**.  
-Zobacz plik [LICENSE](LICENSE) dla szczegółów.
+Ten projekt jest udostępniony na licencji **MIT**.
 
 ---
 
