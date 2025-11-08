@@ -147,42 +147,23 @@
 └─────────────────────────────────────────────────────────┘
 ```
 
-### Baza Danych - Schema
+### Baza Danych
 
-#### Tabela `graves` (Groby)
+Aplikacja wykorzystuje **PostgreSQL z rozszerzeniem PostGIS** dla operacji geoprzestrzennych.
 
-Przechowuje informacje o lokalizacji i szczegółach grobu:
+**Główne tabele:**
 
-- Współrzędne GPS (latitude, longitude, accuracy)
-- Informacje o cmentarzu (nazwa, numer grobu, sektor)
-- Dane właściciela (user_id)
-- Informacje o płatnościach (data wygaśnięcia, kwota, okres)
-- Zdjęcia (tablica URL-i)
+- `graves` - lokalizacje i informacje o grobach
+- `deceased_persons` - dane osób zmarłych (relacja many-to-one z grobami)
+- `users` - konta użytkowników
 
-#### Tabela `deceased_persons` (Osoby Zmarłe)
+**Kluczowe features:**
 
-Obsługuje wiele osób pochowanych w jednym grobie:
+- Indeksowanie geospatialne (GIST) dla szybkich zapytań lokalizacyjnych
+- Row Level Security (RLS) dla zabezpieczenia danych użytkowników
+- Automatyczne triggery dla timestampów
 
-- Powiązanie z grobem (grave_id)
-- Imię i nazwisko
-- Daty urodzenia i śmierci
-- Nazwisko rodowe (dla kobiet)
-- Notatki
-
-#### Tabela `users` (Użytkownicy)
-
-Zarządzanie kontami użytkowników:
-
-- ID użytkownika (UUID)
-- Email
-- Dane autoryzacyjne (zarządzane przez Supabase Auth)
-
-**Indeksy i Optymalizacja:**
-
-- Indeks geospatial (GIST) na współrzędnych dla szybkich zapytań
-- Indeks na user_id dla szybkiego filtrowania grobów użytkownika
-- Indeks na payment_expiry_date dla przypomnień
-- Row Level Security (RLS) dla bezpieczeństwa danych
+Szczegóły schema i migracji: `backend/database/migrations/`
 
 ---
 
@@ -246,35 +227,14 @@ Zarządzanie kontami użytkowników:
 ```
 grave-app/
 ├── backend/                      # NestJS API
-│   ├── src/
-│   │   ├── main.ts               # Bootstrap aplikacji
-│   │   ├── app.module.ts         # Główny moduł
-│   │   ├── config/               # Konfiguracja środowiska
-│   │   ├── database/             # Supabase integration
-│   │   ├── graves/               # Moduł grobów (CRUD)
-│   │   │   ├── graves.controller.ts
-│   │   │   ├── graves.service.ts
-│   │   │   ├── dto/              # Data Transfer Objects
-│   │   │   └── entities/         # TypeScript interfaces
-│   │   └── common/               # Wspólne komponenty
-│   ├── database/
-│   │   └── migrations/           # Migracje SQL
-│   ├── test/                     # Testy E2E
-│   ├── package.json
+│   ├── src/                      # Kod źródłowy
+│   ├── database/                 # Migracje SQL
+│   ├── test/                     # Testy
 │   └── README.md
 │
-├── frontend/                     # Angular PWA (TODO)
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── features/         # Feature modules
-│   │   │   │   ├── map/          # Moduł mapy
-│   │   │   │   ├── graves/       # Moduł grobów
-│   │   │   │   └── settings/     # Ustawienia
-│   │   │   ├── core/             # Singleton services
-│   │   │   └── shared/           # Shared components
-│   │   ├── assets/
-│   │   └── environments/
-│   └── package.json
+├── frontend/                     # Angular PWA (w przygotowaniu)
+│   ├── src/                      # Kod źródłowy
+│   └── README.md
 │
 ├── PROJECT_DOCUMENTATION.md      # Szczegółowa dokumentacja techniczna
 └── README.md                     # Ten plik
@@ -291,51 +251,23 @@ grave-app/
 - **PostgreSQL**: 15+ (lub konto Supabase)
 - **Git**: >= 2.30.0
 
-### Instalacja Backend
+### Instalacja
+
+Szczegółowe instrukcje instalacji i konfiguracji znajdują się w dokumentacji developerskiej:
+
+- **Backend**: Zobacz `backend/README.md` dla szczegółów konfiguracji API
+- **Frontend**: Zobacz `frontend/README.md` (w przygotowaniu)
+- **Baza danych**: Szczegóły setupu w `backend/SUPABASE_SETUP.md`
 
 ```bash
-# 1. Klonowanie repozytorium
-git clone https://github.com/your-username/grave-app.git
-cd grave-app/backend
+# Klonowanie repozytorium
+git clone https://github.com/kacperk72/grave-app.git
+cd grave-app
 
-# 2. Instalacja zależności
+# Instalacja backendu
+cd backend
 npm install
-
-# 3. Konfiguracja zmiennych środowiskowych
-cp .env.example .env
-# Edytuj .env i dodaj swoje klucze Supabase
-
-# 4. Uruchomienie w trybie deweloperskim
 npm run start:dev
-
-# Backend dostępny na http://localhost:3000
-# Swagger API docs: http://localhost:3000/api/docs
-```
-
-### Konfiguracja Supabase
-
-1. **Utwórz projekt na [supabase.com](https://supabase.com)**
-2. **Skopiuj dane projektu:**
-   - Project URL: `https://xxx.supabase.co`
-   - Service Role Key: `eyJ...` (z Settings → API)
-3. **Uruchom migrację SQL:**
-   - Przejdź do SQL Editor w Supabase Dashboard
-   - Skopiuj zawartość `backend/database/migrations/001_initial_schema.sql`
-   - Wykonaj zapytanie
-4. **Dodaj klucze do `.env`:**
-   ```env
-   SUPABASE_URL=https://xxx.supabase.co
-   SUPABASE_SERVICE_KEY=twoj-service-role-key
-   ```
-
-### Instalacja Frontend (gdy będzie gotowy)
-
-```bash
-cd frontend
-npm install
-npm start
-
-# Frontend dostępny na http://localhost:4200
 ```
 
 ---
@@ -351,47 +283,13 @@ npm start
 
 ### API Endpoints
 
-#### Groby (Graves)
+REST API dostarcza pełne CRUD operacje dla grobów, zdjęć i użytkowników.
 
-```http
-GET    /api/graves              # Lista grobów użytkownika
-POST   /api/graves              # Utwórz nowy grób
-GET    /api/graves/:id          # Szczegóły grobu
-PUT    /api/graves/:id          # Aktualizuj grób
-DELETE /api/graves/:id          # Usuń grób
-GET    /api/graves/nearby       # Groby w pobliżu (geospatial)
-       ?lat=52.2297&lng=21.0122&radius=1000
-```
+Szczegółowa dokumentacja API:
 
-#### Przykład Request Body
-
-**POST /api/graves**
-
-```json
-{
-  "latitude": 52.2297,
-  "longitude": 21.0122,
-  "accuracy": 5.0,
-  "cemeteryName": "Cmentarz Powązkowski",
-  "graveNumber": "A-123",
-  "sector": "Sektor 5",
-  "notes": "Przy dużym dębie",
-  "paymentExpiryDate": "2025-12-31",
-  "lastPaymentAmount": 500,
-  "paymentDurationMonths": 12,
-  "paymentCurrency": "PLN",
-  "deceasedPersons": [
-    {
-      "firstName": "Jan",
-      "lastName": "Kowalski",
-      "birthDate": "1950-03-15",
-      "deathDate": "2020-11-01",
-      "maidenName": null,
-      "notes": "Kochany dziadek"
-    }
-  ]
-}
-```
+- **Swagger UI**: dostępna po uruchomieniu backendu na `/api/docs`
+- **OpenAPI Schema**: eksportowalna z Swagger UI
+- **Przykłady**: Zobacz `backend/README.md` dla przykładowych requestów
 
 ---
 
@@ -439,7 +337,7 @@ npm run test:cov
 
 ### Zgłaszanie Błędów
 
-Znalazłeś bug? [Otwórz issue na GitHub](https://github.com/your-username/grave-app/issues) z:
+Znalazłeś bug? [Otwórz issue na GitHub](https://github.com/kacperk72/grave-app/issues) z:
 
 - Opisem problemu
 - Krokami do reprodukcji
@@ -490,18 +388,15 @@ Zobacz plik [LICENSE](LICENSE) dla szczegółów.
 
 **Zespół GraveMap**
 
-- Development: [Twoje Imię](https://github.com/your-username)
-- Design: TBD
-- Contributors: [Lista kontrybutorów](https://github.com/your-username/grave-app/contributors)
+- Development: [kacperk72](https://github.com/kacperk72)
+- Contributors: [Lista kontrybutorów](https://github.com/kacperk72/grave-app/contributors)
 
 ---
 
 ## 📞 Kontakt
 
-- 📧 Email: support@gravemap.app
-- 🐛 Bug Reports: [GitHub Issues](https://github.com/your-username/grave-app/issues)
-- 💬 Discord: [Dołącz do serwera](https://discord.gg/gravemap)
-- 🐦 Twitter: [@GraveMapApp](https://twitter.com/GraveMapApp)
+- Bug Reports: [GitHub Issues](https://github.com/kacperk72/grave-app/issues)
+- 💬 Dyskusje: [GitHub Discussions](https://github.com/kacperk72/grave-app/discussions)
 
 ---
 
@@ -526,9 +421,8 @@ To motywuje do dalszego rozwoju aplikacji.
 
 **Stworzone z ❤️ dla osób pamiętających o swoich bliskich**
 
-[🌐 Website](https://gravemap.app) •
 [📖 Docs](PROJECT_DOCUMENTATION.md) •
-[🐛 Report Bug](https://github.com/your-username/grave-app/issues) •
-[✨ Request Feature](https://github.com/your-username/grave-app/issues)
+[🐛 Report Bug](https://github.com/kacperk72/grave-app/issues) •
+[✨ Request Feature](https://github.com/kacperk72/grave-app/issues)
 
 </div>
