@@ -1,1 +1,76 @@
+@use '@angular/material' as mat;
 /* You can add global styles to this file, and also import other style files */
+
+@include mat.core();
+
+$grave-app-theme: mat.define-theme(
+  (
+    color: (
+      theme-type: light,
+      primary: mat.$green-palette,
+      tertiary: mat.$orange-palette,
+    ),
+    typography: (
+      plain-family: (
+        'Roboto',
+        'Helvetica Neue',
+        sans-serif,
+      ),
+      brand-family: (
+        'Roboto',
+        'Helvetica Neue',
+        sans-serif,
+      ),
+    ),
+    density: (
+      scale: 0,
+    ),
+  )
+);
+
+@include mat.all-component-themes($grave-app-theme);
+
+// Custom Variables from Documentation
+:root {
+  @include mat.system-level-colors($grave-app-theme);
+  @include mat.system-level-typography($grave-app-theme);
+
+  --primary-color: var(--mat-sys-primary);
+  --secondary-color: var(--mat-sys-secondary);
+  --accent-color: var(--mat-sys-tertiary);
+
+  --success-color: #43a047;
+  --error-color: #e53935;
+  --warning-color: #fb8c00;
+  --info-color: #1976d2;
+
+  --background-color: var(--mat-sys-surface);
+  --surface-color: var(--mat-sys-surface-container-low);
+  --text-primary-color: var(--mat-sys-on-surface);
+  --text-secondary-color: var(--mat-sys-on-surface-variant);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; // Prevent horizontal scroll
+}
+
+body {
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-primary-color);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+// Global Map Styles
+.map-container {
+  height: 100%;
+  width: 100%;
+  z-index: 1;
+}
