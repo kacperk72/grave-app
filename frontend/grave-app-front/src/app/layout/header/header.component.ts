@@ -13,7 +13,10 @@ import { RouterLink } from '@angular/router';
       <button mat-icon-button (click)="toggleSidenav.emit()" aria-label="Toggle menu">
         <mat-icon>menu</mat-icon>
       </button>
-      <span class="title" routerLink="/">GraveMap</span>
+      <a class="brand" routerLink="/" aria-label="GraveMap - strona główna">
+        <img class="brand-logo" src="/graveMap-192x192.png" alt="" />
+        <span class="title">GraveMap</span>
+      </a>
       <span class="spacer"></span>
       <button mat-icon-button routerLink="/map" aria-label="Map">
         <mat-icon>map</mat-icon>
@@ -29,16 +32,31 @@ import { RouterLink } from '@angular/router';
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
 
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 8px;
+        color: inherit;
+        text-decoration: none;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .brand-logo {
+        width: 46px;
+        height: 46px;
+        display: block;
+        object-fit: contain;
+      }
+
       .spacer {
         flex: 1 1 auto;
       }
 
       .title {
-        margin-left: 8px;
-        cursor: pointer;
         font-weight: 500;
         font-size: 18px;
-        user-select: none;
 
         @media (max-width: 599px) {
           font-size: 16px;
