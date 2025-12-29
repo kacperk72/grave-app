@@ -1,0 +1,247 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+form {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.step-content {
+  padding: 20px 0;
+
+  h3 {
+    margin: 0 0 6px 0;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  .step-hint {
+    margin: 0 0 20px 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: rgba(0, 0, 0, 0.6);
+  }
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.person-card {
+  margin-bottom: 16px;
+
+  mat-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+  }
+
+  mat-card-content {
+    padding: 16px;
+  }
+
+  mat-card-title {
+    font-size: 16px;
+  }
+}
+
+.add-person-btn {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.step-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+// Custom Progress Indicator
+.progress-header {
+  background: white;
+  padding: 20px 0;
+  margin-bottom: 24px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.progress-dots {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 18px;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: rgba(0, 0, 0, 0.12);
+    z-index: -1;
+  }
+}
+
+.dot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex: 1;
+
+  .dot-number {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: rgba(0, 0, 0, 0.4);
+    transition: all 0.3s ease;
+  }
+
+  .dot-label {
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.5);
+    font-weight: 500;
+    transition: all 0.3s ease;
+    text-align: center;
+  }
+
+  &.active {
+    .dot-number {
+      background: var(--primary-color, #43a047);
+      border-color: var(--primary-color, #43a047);
+      color: white;
+      transform: scale(1.1);
+      box-shadow: 0 2px 8px rgba(67, 160, 71, 0.3);
+    }
+
+    .dot-label {
+      color: var(--primary-color, #43a047);
+      font-weight: 600;
+    }
+  }
+
+  &.completed {
+    .dot-number {
+      background: var(--primary-color, #43a047);
+      border-color: var(--primary-color, #43a047);
+      color: white;
+
+      &::after {
+        content: '✓';
+      }
+    }
+
+    .dot-label {
+      color: rgba(0, 0, 0, 0.7);
+    }
+  }
+
+  &:hover:not(.active) {
+    .dot-number {
+      transform: scale(1.05);
+      border-color: var(--primary-color, #43a047);
+    }
+  }
+}
+
+.steps-container {
+  min-height: 400px;
+}
+
+// Mobile optimizations
+@media (max-width: 599px) {
+  form {
+    padding: 0 8px;
+  }
+
+  .step-content {
+    padding: 16px 0;
+
+    h3 {
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+
+    .step-hint {
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .person-card {
+    margin-bottom: 12px;
+
+    mat-card-header {
+      padding: 10px 12px;
+    }
+
+    mat-card-content {
+      padding: 12px;
+    }
+
+    mat-card-title {
+      font-size: 15px;
+    }
+  }
+
+  .step-actions {
+    margin-top: 16px;
+    padding-top: 12px;
+    gap: 8px;
+
+    button {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  h4 {
+    margin: 16px 0 10px 0;
+    font-size: 14px;
+  }
+}
+
+// Tablet optimization
+@media (min-width: 600px) and (max-width: 959px) {
+  .step-content h3 {
+    font-size: 20px;
+  }
+
+  .dot .dot-label {
+    font-size: 11px;
+  }
+}

@@ -7,6 +7,7 @@ import {
   effect,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { LeafletModule } from '@asymmetrik/ngx-leaflet';
 import * as L from 'leaflet';
 import { Subscription } from 'rxjs';
@@ -20,641 +21,16 @@ import { Grave } from '../../shared/models/grave.model';
 
 @Component({
   selector: 'app-map-page',
-  imports: [DecimalPipe, LeafletModule, MatCardModule, MatButtonModule, MatIconModule],
+  imports: [DecimalPipe, FormsModule, LeafletModule, MatCardModule, MatButtonModule, MatIconModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="map-page">
-      <div class="map-section">
-        <h1 class="page-title">Mapa grobów</h1>
-        <p class="page-subtitle">Wyświetl lokalizacje wszystkich zapisanych grobów na mapie</p>
-
-        <div class="map-wrapper">
-          <div
-            leaflet
-            class="map-container"
-            [leafletOptions]="mapOptions"
-            (leafletMapReady)="onMapReady($event)"
-          ></div>
-        </div>
-
-        @if (currentCoords; as coords) {
-        <div class="coordinates-info">
-          <div class="coord-label">
-            <mat-icon>place</mat-icon>
-            <span>Współrzędne geograficzne:</span>
-          </div>
-          <div class="coord-values">
-            <div class="coord-item">
-              <span class="coord-name">Szerokość:</span>
-              <code class="coord-value">{{ coords.latitude | number : '1.6-6' }}°</code>
-            </div>
-            <div class="coord-item">
-              <span class="coord-name">Długość:</span>
-              <code class="coord-value">{{ coords.longitude | number : '1.6-6' }}°</code>
-            </div>
-          </div>
-        </div>
-        }
-      </div>
-
-      <aside class="info-panel">
-        <mat-card class="location-card">
-          <mat-card-header>
-            <div mat-card-avatar class="location-avatar">
-              <mat-icon class="location-icon">my_location</mat-icon>
-            </div>
-            <mat-card-title>Twoja lokalizacja</mat-card-title>
-            <mat-card-subtitle>Aktywne śledzenie GPS</mat-card-subtitle>
-          </mat-card-header>
-
-          <mat-card-content>
-            @if (currentCoords; as coords) {
-            <div class="status-info">
-              <div
-                class="status-item"
-                [class.excellent]="coords.accuracy <= 5"
-                [class.good]="coords.accuracy > 5 && coords.accuracy <= 15"
-                [class.fair]="coords.accuracy > 15 && coords.accuracy <= 30"
-                [class.poor]="coords.accuracy > 30"
-              >
-                <mat-icon
-                  class="status-icon"
-                  [class.excellent]="coords.accuracy <= 5"
-                  [class.good]="coords.accuracy > 5 && coords.accuracy <= 15"
-                  [class.fair]="coords.accuracy > 15 && coords.accuracy <= 30"
-                  [class.poor]="coords.accuracy > 30"
-                >
-                  {{
-                    coords.accuracy <= 5
-                      ? 'gps_fixed'
-                      : coords.accuracy <= 15
-                      ? 'gps_not_fixed'
-                      : 'gps_off'
-                  }}
-                </mat-icon>
-                <div class="status-text">
-                  <strong>Pozycja aktywna</strong>
-                  <span class="accuracy-info">
-                    Dokładność: {{ coords.accuracy | number : '1.0-0' }}m @if (coords.accuracy <= 5)
-                    {
-                    <span class="quality excellent">• Doskonała</span>
-                    } @else if (coords.accuracy <= 15) {
-                    <span class="quality good">• Bardzo dobra</span>
-                    } @else if (coords.accuracy <= 30) {
-                    <span class="quality fair">• Dobra</span>
-                    } @else {
-                    <span class="quality poor">• Słaba</span>
-                    }
-                  </span>
-                </div>
-              </div>
-            </div>
-            } @else {
-            <div class="loading-state">
-              <mat-icon>hourglass_empty</mat-icon>
-              <div>
-                <p>Oczekiwanie na sygnał GPS...</p>
-                <span class="hint">💡 Wyjdź na zewnątrz dla lepszej dokładności</span>
-              </div>
-            </div>
-            } @if (geoError) {
-            <div class="error-state">
-              <mat-icon>error_outline</mat-icon>
-              <div>
-                <p>{{ geoError }}</p>
-                <span class="hint">Sprawdź uprawnienia aplikacji</span>
-              </div>
-            </div>
-            }
-          </mat-card-content>
-
-          <mat-card-actions>
-            <button
-              mat-raised-button
-              color="primary"
-              (click)="centerOnUser()"
-              [disabled]="!currentCoords"
-              class="center-button"
-            >
-              <mat-icon>my_location</mat-icon>
-              Wycentruj mapę
-            </button>
-          </mat-card-actions>
-        </mat-card>
-      </aside>
-    </div>
-  `,
-  styles: [
-    `
-      .map-page {
-        display: grid;
-        gap: 1.5rem;
-        height: 100%;
-      }
-
-      .map-section {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-
-      .page-title {
-        margin: 0;
-        font-size: 28px;
-        font-weight: 500;
-        color: rgba(0, 0, 0, 0.87);
-      }
-
-      .page-subtitle {
-        margin: 4px 0 0 0;
-        font-size: 14px;
-        color: rgba(0, 0, 0, 0.6);
-      }
-
-      .map-wrapper {
-        flex: 1;
-        min-height: 500px;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(0, 0, 0, 0.12);
-      }
-
-      .map-container {
-        height: 100%;
-        min-height: 500px;
-      }
-
-      .coordinates-info {
-        margin-top: 1rem;
-        padding: 12px 16px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(0, 0, 0, 0.08);
-
-        .coord-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 8px;
-          font-size: 13px;
-          font-weight: 500;
-          color: rgba(0, 0, 0, 0.6);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-
-          mat-icon {
-            font-size: 18px;
-            width: 18px;
-            height: 18px;
-            color: var(--primary-color);
-          }
-        }
-
-        .coord-values {
-          display: flex;
-          gap: 16px;
-          flex-wrap: wrap;
-        }
-
-        .coord-item {
-          display: flex;
-          align-items: baseline;
-          gap: 6px;
-
-          .coord-name {
-            font-size: 12px;
-            color: rgba(0, 0, 0, 0.6);
-          }
-
-          .coord-value {
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            font-weight: 600;
-            color: rgba(0, 0, 0, 0.87);
-            background: rgba(0, 0, 0, 0.04);
-            padding: 2px 6px;
-            border-radius: 4px;
-            user-select: all;
-          }
-        }
-      }
-
-      .info-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-
-      .location-card {
-        mat-card-header {
-          margin-bottom: 16px;
-        }
-
-        .location-avatar {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          background: var(--primary-color);
-        }
-
-        .location-icon {
-          color: white;
-          font-size: 24px;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-      }
-
-      .status-info {
-        padding: 8px 0;
-      }
-
-      .status-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        padding: 16px;
-        border-radius: 12px;
-        border: 1px solid;
-        transition: all 0.3s ease;
-
-        &.excellent {
-          background: linear-gradient(135deg, #e8f5e9 0%, #f1f8f4 100%);
-          border-color: rgba(46, 125, 50, 0.3);
-        }
-
-        &.good {
-          background: linear-gradient(135deg, #e3f2fd 0%, #f0f7ff 100%);
-          border-color: rgba(33, 150, 243, 0.3);
-        }
-
-        &.fair {
-          background: linear-gradient(135deg, #fff3e0 0%, #fff8f0 100%);
-          border-color: rgba(255, 152, 0, 0.3);
-        }
-
-        &.poor {
-          background: linear-gradient(135deg, #ffebee 0%, #fff0f1 100%);
-          border-color: rgba(244, 67, 54, 0.3);
-        }
-
-        .status-icon {
-          font-size: 28px;
-          width: 28px;
-          height: 28px;
-          flex-shrink: 0;
-
-          &.excellent {
-            color: #2e7d32;
-          }
-
-          &.good {
-            color: #1976d2;
-          }
-
-          &.fair {
-            color: #f57c00;
-          }
-
-          &.poor {
-            color: #d32f2f;
-          }
-        }
-
-        .status-text {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          flex: 1;
-
-          strong {
-            font-size: 16px;
-            color: rgba(0, 0, 0, 0.87);
-            line-height: 1.2;
-          }
-
-          .accuracy-info {
-            font-size: 13px;
-            color: rgba(0, 0, 0, 0.6);
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            flex-wrap: wrap;
-          }
-
-          .quality {
-            font-weight: 500;
-            font-size: 12px;
-
-            &.excellent {
-              color: #2e7d32;
-            }
-
-            &.good {
-              color: #1976d2;
-            }
-
-            &.fair {
-              color: #f57c00;
-            }
-
-            &.poor {
-              color: #d32f2f;
-            }
-          }
-        }
-      }
-
-      .loading-state,
-      .error-state {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 20px;
-        border-radius: 12px;
-
-        mat-icon {
-          font-size: 32px;
-          width: 32px;
-          height: 32px;
-          flex-shrink: 0;
-        }
-
-        div {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        p {
-          margin: 0;
-          font-size: 14px;
-          font-weight: 500;
-        }
-
-        .hint {
-          font-size: 12px;
-          opacity: 0.8;
-        }
-      }
-
-      .loading-state {
-        background: rgba(0, 0, 0, 0.04);
-        color: rgba(0, 0, 0, 0.6);
-      }
-
-      .error-state {
-        background: rgba(211, 47, 47, 0.08);
-        color: #d32f2f;
-
-        mat-icon {
-          color: #d32f2f;
-        }
-      }
-
-      mat-card-actions {
-        padding: 16px;
-
-        .center-button {
-          width: 100%;
-
-          mat-icon {
-            margin-right: 8px;
-          }
-        }
-      }
-
-      @media (max-width: 599px) {
-        .page-title {
-          font-size: 22px;
-        }
-
-        .page-subtitle {
-          font-size: 13px;
-          line-height: 1.4;
-        }
-
-        .map-section {
-          gap: 0.75rem;
-        }
-
-        .map-wrapper {
-          min-height: 350px;
-          border-radius: 8px;
-        }
-
-        .map-container {
-          min-height: 350px;
-        }
-
-        .coordinates-info {
-          padding: 10px 12px;
-          margin-top: 0.75rem;
-
-          .coord-label {
-            font-size: 12px;
-            margin-bottom: 6px;
-
-            mat-icon {
-              font-size: 16px;
-              width: 16px;
-              height: 16px;
-            }
-          }
-
-          .coord-values {
-            gap: 12px;
-          }
-
-          .coord-item {
-            .coord-name {
-              font-size: 11px;
-            }
-
-            .coord-value {
-              font-size: 13px;
-              padding: 2px 5px;
-            }
-          }
-        }
-
-        .location-card {
-          mat-card-header {
-            padding: 12px 16px;
-
-            mat-card-title {
-              font-size: 16px;
-            }
-
-            mat-card-subtitle {
-              font-size: 12px;
-            }
-          }
-
-          mat-card-content {
-            padding: 12px 16px;
-          }
-
-          mat-card-actions {
-            padding: 12px 16px;
-          }
-        }
-
-        .status-item {
-          padding: 12px;
-
-          .status-icon {
-            font-size: 24px;
-            width: 24px;
-            height: 24px;
-          }
-
-          .status-text strong {
-            font-size: 15px;
-          }
-
-          .status-text span {
-            font-size: 12px;
-          }
-        }
-
-        .loading-state,
-        .error-state {
-          padding: 16px;
-
-          mat-icon {
-            font-size: 28px;
-            width: 28px;
-            height: 28px;
-          }
-
-          p {
-            font-size: 13px;
-          }
-
-          .hint {
-            font-size: 11px;
-          }
-        }
-      }
-
-      @media (min-width: 600px) and (max-width: 959px) {
-        .map-page {
-          gap: 1.5rem;
-        }
-
-        .map-wrapper {
-          min-height: 450px;
-        }
-
-        .map-container {
-          min-height: 450px;
-        }
-      }
-
-      @media (min-width: 960px) {
-        .map-page {
-          grid-template-columns: 1fr 380px;
-          align-items: flex-start;
-        }
-
-        .map-wrapper {
-          min-height: calc(100vh - 220px);
-        }
-
-        .map-container {
-          min-height: calc(100vh - 220px);
-        }
-
-        .info-panel {
-          position: sticky;
-          top: 1rem;
-        }
-      }
-
-      @media (min-width: 1400px) {
-        .map-page {
-          grid-template-columns: 1fr 420px;
-        }
-      }
-
-      // Custom marker styles
-      :host ::ng-deep .user-location-marker {
-        background: transparent;
-        border: none;
-
-        .marker-pin {
-          position: relative;
-          animation: bounce 2s infinite;
-          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-        }
-      }
-
-      @keyframes bounce {
-        0%,
-        100% {
-          transform: translateY(0);
-        }
-        50% {
-          transform: translateY(-5px);
-        }
-      }
-
-      :host ::ng-deep .leaflet-tooltip {
-        background-color: #2e7d32;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 4px 8px;
-        font-size: 12px;
-        font-weight: 500;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      }
-
-      :host ::ng-deep .leaflet-tooltip-top:before {
-        border-top-color: #2e7d32;
-      }
-
-      :host ::ng-deep .grave-marker {
-        transition: all 0.2s ease;
-      }
-
-      :host ::ng-deep .grave-marker:hover {
-        transform: scale(1.1);
-        z-index: 1000 !important;
-      }
-
-      :host ::ng-deep .grave-popup .leaflet-popup-content-wrapper {
-        border-radius: 12px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        border: 2px solid #c62828;
-      }
-
-      :host ::ng-deep .grave-popup .leaflet-popup-content {
-        margin: 0;
-        min-width: 180px;
-      }
-
-      :host ::ng-deep .grave-popup .leaflet-popup-tip {
-        background: white;
-        border-bottom: 2px solid #c62828;
-        border-right: 2px solid #c62828;
-      }
-    `,
-  ],
+  templateUrl: './map-page.component.html',
+  styleUrls: ['./map-page.component.scss'],
 })
 export class MapPageComponent implements OnDestroy {
   mapOptions: L.MapOptions = {
     zoom: 19, // Maksymalne przybliżenie dla najlepszej dokładności
     center: L.latLng(52.2297, 21.0122),
+    dragging: false, // Zablokowane przesuwanie mapy
     layers: [
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -668,6 +44,17 @@ export class MapPageComponent implements OnDestroy {
   private accuracyCircle?: L.Circle;
   private watchSub?: Subscription;
   private graveMarkers: L.Marker[] = [];
+  private routeLine?: L.Polyline;
+  private routeArrows: L.Marker[] = [];
+  autoCenterEnabled = true; // Domyślnie włączone automatyczne centrowanie
+  isLoadingTestGraves = false;
+  isFullscreen = false;
+
+  // Planowanie trasy
+  plannedRoute: Grave[] = [];
+  totalRouteDistance = 0;
+  maxRouteDistance = 1; // km
+  isCalculatingRoute = false;
 
   currentCoords?: GeolocationCoordinates;
   geoError?: string;
@@ -677,6 +64,9 @@ export class MapPageComponent implements OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
 
   constructor() {
+    // Globalna referencja do nawigacji (dla przycisków w popup)
+    (window as any).navigateToGrave = (graveId: string) => this.navigateToGrave(graveId);
+
     // Automatycznie odświeżaj markery gdy zmieni się lista grobów
     effect(() => {
       const graves = this.graveService.graves();
@@ -695,7 +85,56 @@ export class MapPageComponent implements OnDestroy {
   centerOnUser() {
     if (this.mapInstance && this.currentCoords) {
       const latLng = L.latLng(this.currentCoords.latitude, this.currentCoords.longitude);
-      this.mapInstance.panTo(latLng);
+      this.mapInstance.setView(latLng, this.mapInstance.getZoom(), { animate: true });
+    }
+  }
+
+  toggleAutoCenter() {
+    this.autoCenterEnabled = !this.autoCenterEnabled;
+
+    // Jeśli włączamy auto-centrowanie, od razu wycentruj mapę
+    if (this.autoCenterEnabled && this.currentCoords) {
+      this.centerOnUser();
+    }
+
+    this.cdr.markForCheck();
+  }
+
+  toggleFullscreen() {
+    this.isFullscreen = !this.isFullscreen;
+
+    // Odśwież rozmiar mapy po zmianie trybu
+    setTimeout(() => {
+      if (this.mapInstance) {
+        this.mapInstance.invalidateSize();
+        // Wycentruj mapę jeśli auto-centrowanie jest włączone
+        if (this.autoCenterEnabled && this.currentCoords) {
+          this.centerOnUser();
+        }
+      }
+    }, 100);
+
+    this.cdr.markForCheck();
+  }
+
+  async loadTestGraves() {
+    if (!this.currentCoords) return;
+
+    this.isLoadingTestGraves = true;
+    this.cdr.markForCheck();
+
+    try {
+      await this.graveService.generateMockGraves(
+        this.currentCoords.latitude,
+        this.currentCoords.longitude,
+        8
+      );
+      console.log('✅ Załadowano testowe groby wokół Twojej lokalizacji');
+    } catch (error) {
+      console.error('❌ Błąd podczas ładowania testowych grobów:', error);
+    } finally {
+      this.isLoadingTestGraves = false;
+      this.cdr.markForCheck();
     }
   }
 
@@ -757,8 +196,9 @@ export class MapPageComponent implements OnDestroy {
           }
         }
 
-        if (this.mapInstance && !this.mapInstance.getBounds().contains(latLng)) {
-          this.mapInstance.panTo(latLng);
+        // Automatyczne centrowanie jeśli jest włączone - używa setView dla precyzji
+        if (this.mapInstance && this.autoCenterEnabled) {
+          this.mapInstance.setView(latLng, this.mapInstance.getZoom(), { animate: true });
         }
       },
       error: (err) => {
@@ -788,7 +228,7 @@ export class MapPageComponent implements OnDestroy {
           <div style="transform: translateY(-21px);">
             <svg width="28" height="38" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
               <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26c0-8.837-7.163-16-16-16z" 
-                    fill="#C62828" stroke="#8B0000" stroke-width="2"/>
+                    fill="#546E7A" stroke="#37474F" stroke-width="2"/>
               <path d="M16 10 L16 22 M10 16 L22 16" stroke="white" stroke-width="3" stroke-linecap="round"/>
             </svg>
           </div>
@@ -807,7 +247,8 @@ export class MapPageComponent implements OnDestroy {
       // Popup z informacjami o grobie
       const popupContent = this.createGravePopup(grave);
       marker.bindPopup(popupContent, {
-        maxWidth: 300,
+        maxWidth: 400,
+        minWidth: 280,
         className: 'grave-popup',
       });
 
@@ -833,22 +274,410 @@ export class MapPageComponent implements OnDestroy {
         ? `${grave.sector}, nr ${grave.graveNumber}`
         : grave.graveNumber || 'Brak numeru';
 
+    const distance = this.currentCoords
+      ? this.calculateDistance(
+          this.currentCoords.latitude,
+          this.currentCoords.longitude,
+          grave.latitude,
+          grave.longitude
+        )
+      : null;
+
+    const distanceInfo =
+      distance !== null
+        ? `<div style="font-size: 13px; color: rgba(0,0,0,0.5); margin-top: 8px;">📏 Odległość: ${distance.toFixed(
+            0
+          )}m</div>`
+        : '';
+
     return `
-      <div style="padding: 8px;">
-        <div style="font-size: 14px; margin-bottom: 8px;">
+      <div style="padding: 16px; min-height: 100px;">
+        <div style="font-size: 16px; margin-bottom: 12px; line-height: 1.5;">
           ${names || '<em>Brak informacji</em>'}
         </div>
-        <div style="font-size: 12px; color: rgba(0,0,0,0.6); margin-bottom: 4px;">
+        <div style="font-size: 14px; color: rgba(0,0,0,0.6); margin-bottom: 8px;">
           <strong>📍 ${grave.cemeteryName}</strong>
         </div>
-        <div style="font-size: 11px; color: rgba(0,0,0,0.5);">
+        <div style="font-size: 13px; color: rgba(0,0,0,0.5);">
           ${location}
         </div>
+        ${distanceInfo}
+        <button 
+          onclick="window.navigateToGrave('${grave.id}')"
+          style="
+            margin-top: 12px;
+            width: 100%;
+            padding: 10px 16px;
+            background: #43a047;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s;
+          "
+          onmouseover="this.style.background='#388e3c'"
+          onmouseout="this.style.background='#43a047'"
+        >
+          <span style="font-size: 18px;">🧭</span> Nawiguj do grobu
+        </button>
       </div>
     `;
   }
 
+  /**
+   * Oblicza odległość w metrach między dwoma punktami używając wzoru Haversine
+   */
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3; // Promień Ziemi w metrach
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Dystans w metrach
+  }
+
+  /**
+   * Otwiera nawigację do konkretnego grobu w Google Maps
+   */
+  navigateToGrave(graveId: string): void {
+    const grave = this.graveService.graves().find((g) => g.id === graveId);
+    if (!grave) return;
+
+    // Otwórz Google Maps z nawigacją do grobu
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${grave.latitude},${grave.longitude}`;
+    window.open(url, '_blank');
+  }
+
+  /**
+   * Planuje optymalną trasę przez groby w określonym promieniu
+   * Używa algorytmu najbliższego sąsiada (aproksymacja TSP)
+   */
+  async planOptimalRoute(): Promise<void> {
+    if (!this.currentCoords) {
+      console.warn('Brak lokalizacji użytkownika');
+      return;
+    }
+
+    this.isCalculatingRoute = true;
+    this.cdr.markForCheck();
+
+    try {
+      const allGraves = this.graveService.graves();
+      const maxDistanceMeters = this.maxRouteDistance * 1000;
+
+      // Filtruj groby w promieniu
+      const nearbyGraves = allGraves.filter((grave) => {
+        const distance = this.calculateDistance(
+          this.currentCoords!.latitude,
+          this.currentCoords!.longitude,
+          grave.latitude,
+          grave.longitude
+        );
+        return distance <= maxDistanceMeters;
+      });
+
+      if (nearbyGraves.length === 0) {
+        console.log('Brak grobów w określonym promieniu');
+        this.plannedRoute = [];
+        this.totalRouteDistance = 0;
+        this.clearRouteFromMap();
+        this.cdr.markForCheck();
+        return;
+      }
+
+      // Rozwiąż problem komiwojażera (TSP) algorytmem najbliższego sąsiada
+      const route = this.solveTSPNearestNeighbor(
+        this.currentCoords.latitude,
+        this.currentCoords.longitude,
+        nearbyGraves
+      );
+
+      this.plannedRoute = route;
+      this.totalRouteDistance = this.calculateTotalRouteDistance(route);
+      this.drawRouteOnMap(route);
+
+      console.log(
+        `🗺️ Zaplanowano trasę przez ${route.length} grobów, dystans: ${(
+          this.totalRouteDistance / 1000
+        ).toFixed(2)}km`
+      );
+    } finally {
+      this.isCalculatingRoute = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * Rozwiązuje TSP używając algorytmu najbliższego sąsiada
+   * (heurystyka - nie gwarantuje optymalnego rozwiązania, ale działa szybko)
+   */
+  private solveTSPNearestNeighbor(startLat: number, startLon: number, graves: Grave[]): Grave[] {
+    if (graves.length === 0) return [];
+    if (graves.length === 1) return graves;
+
+    const route: Grave[] = [];
+    const unvisited = new Set(graves);
+    let currentLat = startLat;
+    let currentLon = startLon;
+
+    // Znajdź najbliższy grób jako punkt startowy
+    let nearest = this.findNearestGrave(currentLat, currentLon, Array.from(unvisited));
+    if (!nearest) return [];
+
+    route.push(nearest);
+    unvisited.delete(nearest);
+    currentLat = nearest.latitude;
+    currentLon = nearest.longitude;
+
+    // Iteracyjnie wybieraj najbliższy nieodwiedzony grób
+    while (unvisited.size > 0) {
+      nearest = this.findNearestGrave(currentLat, currentLon, Array.from(unvisited));
+      if (!nearest) break;
+
+      route.push(nearest);
+      unvisited.delete(nearest);
+      currentLat = nearest.latitude;
+      currentLon = nearest.longitude;
+    }
+
+    return route;
+  }
+
+  private findNearestGrave(lat: number, lon: number, graves: Grave[]): Grave | null {
+    if (graves.length === 0) return null;
+
+    let nearest = graves[0];
+    let minDistance = this.calculateDistance(lat, lon, nearest.latitude, nearest.longitude);
+
+    for (let i = 1; i < graves.length; i++) {
+      const distance = this.calculateDistance(lat, lon, graves[i].latitude, graves[i].longitude);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = graves[i];
+      }
+    }
+
+    return nearest;
+  }
+
+  private calculateTotalRouteDistance(route: Grave[]): number {
+    if (!this.currentCoords || route.length === 0) return 0;
+
+    let total = 0;
+
+    // Dystans od pozycji użytkownika do pierwszego grobu
+    total += this.calculateDistance(
+      this.currentCoords.latitude,
+      this.currentCoords.longitude,
+      route[0].latitude,
+      route[0].longitude
+    );
+
+    // Dystans między kolejnymi grobami
+    for (let i = 0; i < route.length - 1; i++) {
+      total += this.calculateDistance(
+        route[i].latitude,
+        route[i].longitude,
+        route[i + 1].latitude,
+        route[i + 1].longitude
+      );
+    }
+
+    return total;
+  }
+
+  private drawRouteOnMap(route: Grave[]): void {
+    if (!this.mapInstance || !this.currentCoords || route.length === 0) return;
+
+    // Usuń poprzednią trasę
+    this.clearRouteFromMap();
+
+    // Utwórz punkty trasy - WAŻNE: dokładne współrzędne
+    const points: L.LatLngExpression[] = [
+      [this.currentCoords.latitude, this.currentCoords.longitude],
+      ...route.map((grave) => [grave.latitude, grave.longitude] as L.LatLngExpression),
+    ];
+
+    console.log('🗺️ Rysowanie trasy przez punkty:', points);
+
+    // Rysuj linię trasy - prosta linia przez wszystkie punkty
+    this.routeLine = L.polyline(points, {
+      color: '#5C6BC0',
+      weight: 5,
+      opacity: 0.9,
+      dashArray: '10, 10',
+      lineJoin: 'round',
+      lineCap: 'round',
+      smoothFactor: 0, // WAŻNE: 0 = dokładne przejście przez punkty, bez wygładzania
+    }).addTo(this.mapInstance);
+
+    // Ustaw zIndex żeby linia była widoczna ale pod markerami
+    if (this.routeLine) {
+      (this.routeLine as any).setZIndex(100);
+    }
+
+    // Dodaj strzałki kierunku wzdłuż trasy
+    this.addDirectionArrows(points);
+
+    // Dodaj numerację punktów trasy
+    route.forEach((grave, index) => {
+      if (!this.mapInstance) return;
+
+      const numberIcon = L.divIcon({
+        html: `<div style="
+          background: #5C6BC0;
+          color: white;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: bold;
+          font-size: 15px;
+          border: 3px solid white;
+          box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+        ">${index + 1}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        className: 'route-number-marker',
+      });
+
+      L.marker([grave.latitude, grave.longitude], {
+        icon: numberIcon,
+        zIndexOffset: 500,
+      }).addTo(this.mapInstance!);
+    });
+
+    // Dopasuj widok mapy do trasy
+    const bounds = L.latLngBounds(points);
+    this.mapInstance.fitBounds(bounds, { padding: [50, 50] });
+  }
+
+  clearRoute(): void {
+    this.plannedRoute = [];
+    this.totalRouteDistance = 0;
+    this.clearRouteFromMap();
+    this.cdr.markForCheck();
+  }
+
+  private clearRouteFromMap(): void {
+    if (this.routeLine) {
+      this.routeLine.remove();
+      this.routeLine = undefined;
+    }
+
+    // Usuń strzałki kierunku
+    this.routeArrows.forEach((arrow) => arrow.remove());
+    this.routeArrows = [];
+
+    // Usuń markery numerów (są one dodawane dynamicznie)
+    if (this.mapInstance) {
+      this.mapInstance.eachLayer((layer) => {
+        if (layer instanceof L.Marker) {
+          const icon = (layer as any).options.icon;
+          if (icon && icon.options.className === 'route-number-marker') {
+            layer.remove();
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Dodaje strzałki kierunku wzdłuż trasy
+   */
+  private addDirectionArrows(points: L.LatLngExpression[]): void {
+    if (!this.mapInstance || points.length < 2) return;
+
+    // Dla każdego segmentu trasy, dodaj strzałkę na środku
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i] as [number, number];
+      const p2 = points[i + 1] as [number, number];
+
+      // Oblicz punkt środkowy
+      const midLat = (p1[0] + p2[0]) / 2;
+      const midLng = (p1[1] + p2[1]) / 2;
+
+      // Oblicz kąt rotacji strzałki
+      const angle = this.calculateBearing(p1[0], p1[1], p2[0], p2[1]);
+
+      // Utwórz ikonę strzałki z SVG
+      const arrowIcon = L.divIcon({
+        html: `
+          <svg width="30" height="30" viewBox="0 0 30 30" style="transform: rotate(${angle}deg);">
+            <path d="M15 5 L25 15 L15 25 L15 19 L5 19 L5 11 L15 11 Z" 
+                  fill="#5C6BC0" 
+                  stroke="white" 
+                  stroke-width="2"/>
+          </svg>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        className: 'route-arrow-marker',
+      });
+
+      // Dodaj marker strzałki
+      const arrow = L.marker([midLat, midLng], {
+        icon: arrowIcon,
+        zIndexOffset: 200,
+      }).addTo(this.mapInstance);
+
+      this.routeArrows.push(arrow);
+    }
+  }
+
+  /**
+   * Oblicza kąt (bearing) między dwoma punktami geograficznymi
+   */
+  private calculateBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const lat1Rad = lat1 * (Math.PI / 180);
+    const lat2Rad = lat2 * (Math.PI / 180);
+
+    const y = Math.sin(dLon) * Math.cos(lat2Rad);
+    const x =
+      Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+      Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+
+    const bearing = Math.atan2(y, x) * (180 / Math.PI);
+    return bearing;
+  }
+
+  /**
+   * Otwiera nawigację Google Maps z wszystkimi punktami trasy
+   */
+  startRouteNavigation(): void {
+    if (!this.currentCoords || this.plannedRoute.length === 0) return;
+
+    // Google Maps API wspiera do 9 waypoints, więc limitujemy
+    const maxWaypoints = Math.min(this.plannedRoute.length - 1, 9);
+    const waypoints = this.plannedRoute
+      .slice(0, maxWaypoints)
+      .map((g) => `${g.latitude},${g.longitude}`)
+      .join('|');
+
+    const lastGrave = this.plannedRoute[maxWaypoints];
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${this.currentCoords.latitude},${this.currentCoords.longitude}&destination=${lastGrave.latitude},${lastGrave.longitude}&waypoints=${waypoints}&travelmode=walking`;
+
+    window.open(url, '_blank');
+  }
+
   ngOnDestroy(): void {
     this.watchSub?.unsubscribe();
+    this.clearRouteFromMap();
+    delete (window as any).navigateToGrave;
   }
 }

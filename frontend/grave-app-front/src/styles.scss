@@ -74,3 +74,9 @@ body {
   width: 100%;
   z-index: 1;
 }
+
+// Custom FAB button styling
+.mat-mdc-fab {
+  --mat-fab-container-color: white !important;
+  background-color: white !important;
+}

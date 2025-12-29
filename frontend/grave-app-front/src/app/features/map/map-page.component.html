@@ -1,0 +1,243 @@
+<div class="map-page">
+  <div class="map-section">
+    <h1 class="page-title">Mapa grobów</h1>
+    <p class="page-subtitle">Wyświetl lokalizacje wszystkich zapisanych grobów na mapie</p>
+
+    <div class="map-wrapper" [class.fullscreen]="isFullscreen">
+      <button
+        mat-fab
+        color="primary"
+        class="fullscreen-button"
+        (click)="toggleFullscreen()"
+        [attr.aria-label]="isFullscreen ? 'Wyjść z pełnego ekranu' : 'Pełny ekran'"
+      >
+        <mat-icon>{{ isFullscreen ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
+      </button>
+      <div
+        leaflet
+        class="map-container"
+        [leafletOptions]="mapOptions"
+        (leafletMapReady)="onMapReady($event)"
+      ></div>
+    </div>
+
+    @if (currentCoords; as coords) {
+    <div class="coordinates-info">
+      <div class="coord-label">
+        <mat-icon>place</mat-icon>
+        <span>Współrzędne geograficzne:</span>
+      </div>
+      <div class="coord-values">
+        <div class="coord-item">
+          <span class="coord-name">Szerokość:</span>
+          <code class="coord-value">{{ coords.latitude | number : '1.6-6' }}°</code>
+        </div>
+        <div class="coord-item">
+          <span class="coord-name">Długość:</span>
+          <code class="coord-value">{{ coords.longitude | number : '1.6-6' }}°</code>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+
+  <aside class="info-panel">
+    <mat-card class="location-card">
+      <mat-card-header>
+        <div mat-card-avatar class="location-avatar">
+          <mat-icon class="location-icon">my_location</mat-icon>
+        </div>
+        <mat-card-title>Twoja lokalizacja</mat-card-title>
+        <mat-card-subtitle>Aktywne śledzenie GPS</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        @if (currentCoords; as coords) {
+        <div class="status-info">
+          <div
+            class="status-item"
+            [class.excellent]="coords.accuracy <= 5"
+            [class.good]="coords.accuracy > 5 && coords.accuracy <= 15"
+            [class.fair]="coords.accuracy > 15 && coords.accuracy <= 30"
+            [class.poor]="coords.accuracy > 30"
+          >
+            <mat-icon
+              class="status-icon"
+              [class.excellent]="coords.accuracy <= 5"
+              [class.good]="coords.accuracy > 5 && coords.accuracy <= 15"
+              [class.fair]="coords.accuracy > 15 && coords.accuracy <= 30"
+              [class.poor]="coords.accuracy > 30"
+            >
+              {{
+                coords.accuracy <= 5
+                  ? 'gps_fixed'
+                  : coords.accuracy <= 15
+                  ? 'gps_not_fixed'
+                  : 'gps_off'
+              }}
+            </mat-icon>
+            <div class="status-text">
+              <strong>Pozycja aktywna</strong>
+              <span class="accuracy-info">
+                Dokładność: {{ coords.accuracy | number : '1.0-0' }}m @if (coords.accuracy <= 5) {
+                <span class="quality excellent">• Doskonała</span>
+                } @else if (coords.accuracy <= 15) {
+                <span class="quality good">• Bardzo dobra</span>
+                } @else if (coords.accuracy <= 30) {
+                <span class="quality fair">• Dobra</span>
+                } @else {
+                <span class="quality poor">• Słaba</span>
+                }
+              </span>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <div class="loading-state">
+          <mat-icon>hourglass_empty</mat-icon>
+          <div>
+            <p>Oczekiwanie na sygnał GPS...</p>
+            <span class="hint">💡 Wyjdź na zewnątrz dla lepszej dokładności</span>
+          </div>
+        </div>
+        } @if (geoError) {
+        <div class="error-state">
+          <mat-icon>error_outline</mat-icon>
+          <div>
+            <p>{{ geoError }}</p>
+            <span class="hint">Sprawdź uprawnienia aplikacji</span>
+          </div>
+        </div>
+        }
+      </mat-card-content>
+
+      <mat-card-actions>
+        <button
+          mat-raised-button
+          [color]="autoCenterEnabled ? 'primary' : 'accent'"
+          (click)="toggleAutoCenter()"
+          [disabled]="!currentCoords"
+          class="center-button"
+        >
+          <mat-icon>{{ autoCenterEnabled ? 'gps_fixed' : 'gps_not_fixed' }}</mat-icon>
+          {{ autoCenterEnabled ? 'Auto-centrowanie: ON' : 'Auto-centrowanie: OFF' }}
+        </button>
+        <button
+          mat-raised-button
+          color="warn"
+          (click)="loadTestGraves()"
+          [disabled]="!currentCoords || isLoadingTestGraves"
+          class="test-button"
+        >
+          <mat-icon>add_location</mat-icon>
+          {{ isLoadingTestGraves ? 'Ładowanie...' : 'Testowe groby' }}
+        </button>
+      </mat-card-actions>
+    </mat-card>
+
+    <mat-card class="route-planning-card">
+      <mat-card-header>
+        <div mat-card-avatar class="route-avatar">
+          <mat-icon class="route-icon">route</mat-icon>
+        </div>
+        <mat-card-title>Planowanie trasy</mat-card-title>
+        <mat-card-subtitle>Optymalna ścieżka przez groby</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        <div class="route-config">
+          <div class="distance-selector">
+            <label for="maxDistance">Maksymalny promień:</label>
+            <div class="distance-input-group">
+              <input
+                type="range"
+                id="maxDistance"
+                [(ngModel)]="maxRouteDistance"
+                min="0.5"
+                max="5"
+                step="0.5"
+                class="distance-slider"
+              />
+              <span class="distance-value">{{ maxRouteDistance }} km</span>
+            </div>
+          </div>
+
+          @if (plannedRoute.length > 0) {
+          <div class="route-summary">
+            <div class="summary-item">
+              <mat-icon>flag</mat-icon>
+              <div>
+                <strong>{{ plannedRoute.length }}</strong>
+                <span>{{ plannedRoute.length === 1 ? 'grób' : 'grobów' }}</span>
+              </div>
+            </div>
+            <div class="summary-item">
+              <mat-icon>straighten</mat-icon>
+              <div>
+                <strong>{{ (totalRouteDistance / 1000).toFixed(2) }}</strong>
+                <span>km</span>
+              </div>
+            </div>
+            <div class="summary-item">
+              <mat-icon>schedule</mat-icon>
+              <div>
+                <strong>{{ ((totalRouteDistance / 1000) * 12).toFixed(0) }}</strong>
+                <span>min</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="route-list">
+            <h4>Kolejność odwiedzin:</h4>
+            <ol class="graves-order">
+              @for (grave of plannedRoute; track grave.id; let i = $index) {
+              <li class="grave-item">
+                <span class="grave-number">{{ i + 1 }}</span>
+                <div class="grave-info">
+                  <strong>
+                    {{ grave.deceasedPersons[0]?.firstName }}
+                    {{ grave.deceasedPersons[0]?.lastName }}
+                  </strong>
+                  <small>{{ grave.cemeteryName }}</small>
+                </div>
+              </li>
+              }
+            </ol>
+          </div>
+          }
+        </div>
+      </mat-card-content>
+
+      <mat-card-actions>
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="planOptimalRoute()"
+          [disabled]="!currentCoords || isCalculatingRoute"
+          class="plan-button"
+        >
+          <mat-icon>
+            {{ isCalculatingRoute ? 'hourglass_empty' : 'route' }}
+          </mat-icon>
+          {{ isCalculatingRoute ? 'Obliczanie...' : 'Zaplanuj trasę' }}
+        </button>
+
+        @if (plannedRoute.length > 0) {
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="startRouteNavigation()"
+          class="navigate-button"
+        >
+          <mat-icon>navigation</mat-icon>
+          Rozpocznij nawigację
+        </button>
+        <button mat-stroked-button (click)="clearRoute()" class="clear-button">
+          <mat-icon>clear</mat-icon>
+          Wyczyść trasę
+        </button>
+        }
+      </mat-card-actions>
+    </mat-card>
+  </aside>
+</div>
