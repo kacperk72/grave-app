@@ -45,7 +45,6 @@ export class MapPageComponent implements OnDestroy {
   private watchSub?: Subscription;
   private graveMarkers: L.Marker[] = [];
   private routeLine?: L.Polyline;
-  private routeArrows: L.Marker[] = [];
   autoCenterEnabled = true; // Domyślnie włączone automatyczne centrowanie
   isLoadingTestGraves = false;
   isFullscreen = false;
@@ -56,6 +55,16 @@ export class MapPageComponent implements OnDestroy {
   maxRouteDistance = 1; // km
   isCalculatingRoute = false;
 
+  nextWaypoint?: {
+    grave: Grave;
+    distanceMeters: number;
+    bearingDeg: number;
+    arrowRotationDeg: number;
+  };
+  isNavigationActive = false;
+  activeGallery?: { graveId: string; index: number };
+  selectedGrave?: Grave;
+
   currentCoords?: GeolocationCoordinates;
   geoError?: string;
 
@@ -64,9 +73,6 @@ export class MapPageComponent implements OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
 
   constructor() {
-    // Globalna referencja do nawigacji (dla przycisków w popup)
-    (window as any).navigateToGrave = (graveId: string) => this.navigateToGrave(graveId);
-
     // Automatycznie odświeżaj markery gdy zmieni się lista grobów
     effect(() => {
       const graves = this.graveService.graves();
@@ -129,7 +135,6 @@ export class MapPageComponent implements OnDestroy {
         this.currentCoords.longitude,
         8
       );
-      console.log('✅ Załadowano testowe groby wokół Twojej lokalizacji');
     } catch (error) {
       console.error('❌ Błąd podczas ładowania testowych grobów:', error);
     } finally {
@@ -139,7 +144,7 @@ export class MapPageComponent implements OnDestroy {
   }
 
   private startTracking() {
-    this.watchSub = this.geolocation.watchPosition().subscribe({
+    this.watchSub = this.geolocation.watchPosition({ intervalMs: 5000 }).subscribe({
       next: (pos) => {
         this.geoError = undefined;
         this.currentCoords = pos.coords;
@@ -148,28 +153,12 @@ export class MapPageComponent implements OnDestroy {
         const latLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
 
         if (!this.userMarker && this.mapInstance) {
-          // Utworzenie niestandardowej ikony pinezki dla lokalizacji użytkownika
-          const userIcon = L.divIcon({
-            className: 'user-location-marker',
-            html: `
-              <div class="marker-pin">
-                <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26c0-8.837-7.163-16-16-16z" 
-                        fill="#2E7D32" stroke="#1B5E20" stroke-width="2"/>
-                  <circle cx="16" cy="16" r="6" fill="white"/>
-                  <circle cx="16" cy="16" r="3" fill="#2E7D32"/>
-                </svg>
-              </div>
-            `,
-            iconSize: [32, 42],
-            iconAnchor: [16, 42],
-            popupAnchor: [0, -42],
-          });
-
           this.userMarker = L.marker(latLng, {
-            icon: userIcon,
             zIndexOffset: 1000, // Zawsze na wierzchu
           }).addTo(this.mapInstance);
+
+          // Ustaw ikonę użytkownika (pinezka lub strzałka) zależnie od trybu nawigacji
+          this.applyUserMarkerIcon();
 
           // Dodaj okrąg dokładności
           this.accuracyCircle = L.circle(latLng, {
@@ -200,6 +189,9 @@ export class MapPageComponent implements OnDestroy {
         if (this.mapInstance && this.autoCenterEnabled) {
           this.mapInstance.setView(latLng, this.mapInstance.getZoom(), { animate: true });
         }
+
+        // Aktualizuj wskazanie kierunku do następnego punktu trasy
+        this.updateNextWaypointGuidance();
       },
       error: (err) => {
         console.error('Geolocation error', err);
@@ -207,6 +199,138 @@ export class MapPageComponent implements OnDestroy {
         this.cdr.markForCheck(); // Trigger change detection for error
       },
     });
+  }
+
+  openGallery(graveId: string, index: number): void {
+    this.activeGallery = { graveId, index };
+    this.cdr.markForCheck();
+  }
+
+  closeGallery(): void {
+    this.activeGallery = undefined;
+    this.cdr.markForCheck();
+  }
+
+  openGraveDetails(grave: Grave): void {
+    this.selectedGrave = grave;
+    this.cdr.markForCheck();
+  }
+
+  closeGraveDetails(): void {
+    this.selectedGrave = undefined;
+    this.cdr.markForCheck();
+  }
+
+  getDistanceToGrave(grave: Grave): number | null {
+    if (!this.currentCoords) return null;
+    return this.calculateDistance(
+      this.currentCoords.latitude,
+      this.currentCoords.longitude,
+      grave.latitude,
+      grave.longitude
+    );
+  }
+
+  getGraveLocationLabel(grave: Grave): string {
+    if (grave.sector && grave.graveNumber) return `${grave.sector}, nr ${grave.graveNumber}`;
+    return grave.graveNumber || 'Brak numeru';
+  }
+
+  private createUserPinIcon(): L.DivIcon {
+    return L.divIcon({
+      className: 'user-location-marker',
+      html: `
+        <div class="marker-pin">
+          <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26c0-8.837-7.163-16-16-16z"
+                  fill="#2E7D32" stroke="#1B5E20" stroke-width="2"/>
+            <circle cx="16" cy="16" r="6" fill="white"/>
+            <circle cx="16" cy="16" r="3" fill="#2E7D32"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [32, 42],
+      iconAnchor: [16, 42],
+      popupAnchor: [0, -42],
+    });
+  }
+
+  private createUserArrowIcon(rotationDeg: number): L.DivIcon {
+    return L.divIcon({
+      className: 'user-location-arrow-marker',
+      html: `
+        <div class="user-direction-arrow" style="transform: rotate(${rotationDeg}deg);">
+          <svg width="36" height="36" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 3 L27 15 L15 27 L15 20 L5 20 L5 10 L15 10 Z"
+                  fill="#2E7D32" stroke="white" stroke-width="2"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+  }
+
+  private getNavigationArrowRotationDeg(bearingDeg: number): number {
+    // bearingDeg: kierunek do celu względem północy (0..360)
+    // coords.heading: kierunek ruchu użytkownika względem północy (0..360) – często null, zwłaszcza gdy stoisz
+    const heading = this.currentCoords?.heading;
+    if (
+      this.isNavigationActive &&
+      heading !== null &&
+      heading !== undefined &&
+      !Number.isNaN(heading)
+    ) {
+      // Obrót „kompasowy”: gdzie iść względem tego, w którą stronę się poruszasz
+      return (bearingDeg - heading + 360) % 360;
+    }
+
+    // Fallback: obrót względem północy (na mapie północ jest u góry)
+    return bearingDeg;
+  }
+
+  private applyUserMarkerIcon(): void {
+    if (!this.userMarker) return;
+
+    if (this.isNavigationActive && this.nextWaypoint) {
+      this.userMarker.setIcon(this.createUserArrowIcon(this.nextWaypoint.arrowRotationDeg));
+      return;
+    }
+
+    this.userMarker.setIcon(this.createUserPinIcon());
+  }
+
+  private updateNextWaypointGuidance(): void {
+    if (!this.mapInstance || !this.currentCoords || this.plannedRoute.length === 0) {
+      this.nextWaypoint = undefined;
+      // Jeśli kończymy trasę, wróć do pinezki
+      this.applyUserMarkerIcon();
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const next = this.plannedRoute[0];
+    const distanceMeters = this.calculateDistance(
+      this.currentCoords.latitude,
+      this.currentCoords.longitude,
+      next.latitude,
+      next.longitude
+    );
+    const bearingDeg = this.calculateBearing(
+      this.currentCoords.latitude,
+      this.currentCoords.longitude,
+      next.latitude,
+      next.longitude
+    );
+
+    const arrowRotationDeg = this.getNavigationArrowRotationDeg(bearingDeg);
+
+    this.nextWaypoint = { grave: next, distanceMeters, bearingDeg, arrowRotationDeg };
+
+    // W trybie nawigacji strzałka zastępuje pinezkę lokalizacji
+    this.applyUserMarkerIcon();
+
+    this.cdr.markForCheck();
   }
 
   private addGraveMarkers(): void {
@@ -217,21 +341,18 @@ export class MapPageComponent implements OnDestroy {
     this.graveMarkers = [];
 
     const graves = this.graveService.graves();
-    console.log(`📍 Dodawanie ${graves.length} markerów grobów na mapę`);
 
-    graves.forEach((grave) => {
+    graves.forEach((grave, index) => {
       if (!this.mapInstance) return;
 
       // Ikona grobu (różowa/czerwona przypinka)
       const graveIcon = L.divIcon({
         html: `
-          <div style="transform: translateY(-21px);">
-            <svg width="28" height="38" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
-              <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26c0-8.837-7.163-16-16-16z" 
-                    fill="#546E7A" stroke="#37474F" stroke-width="2"/>
-              <path d="M16 10 L16 22 M10 16 L22 16" stroke="white" stroke-width="3" stroke-linecap="round"/>
-            </svg>
-          </div>
+          <svg width="28" height="38" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26c0-8.837-7.163-16-16-16z" 
+                  fill="#546E7A" stroke="#37474F" stroke-width="2"/>
+            <path d="M16 10 L16 22 M10 16 L22 16" stroke="white" stroke-width="3" stroke-linecap="round"/>
+          </svg>
         `,
         iconSize: [28, 38],
         iconAnchor: [14, 38],
@@ -244,12 +365,9 @@ export class MapPageComponent implements OnDestroy {
         title: this.getGraveTitle(grave),
       }).addTo(this.mapInstance);
 
-      // Popup z informacjami o grobie
-      const popupContent = this.createGravePopup(grave);
-      marker.bindPopup(popupContent, {
-        maxWidth: 400,
-        minWidth: 280,
-        className: 'grave-popup',
+      // Zamiast Leaflet popup (problemy z rozmiarem/zamykaniem) otwieramy modal Angulara
+      marker.on('click', () => {
+        this.openGraveDetails(grave);
       });
 
       this.graveMarkers.push(marker);
@@ -262,72 +380,6 @@ export class MapPageComponent implements OnDestroy {
       return `${person.firstName} ${person.lastName}`;
     }
     return grave.cemeteryName;
-  }
-
-  private createGravePopup(grave: Grave): string {
-    const names = grave.deceasedPersons
-      .map((p) => `<strong>${p.firstName} ${p.lastName}</strong>`)
-      .join('<br>');
-
-    const location =
-      grave.sector && grave.graveNumber
-        ? `${grave.sector}, nr ${grave.graveNumber}`
-        : grave.graveNumber || 'Brak numeru';
-
-    const distance = this.currentCoords
-      ? this.calculateDistance(
-          this.currentCoords.latitude,
-          this.currentCoords.longitude,
-          grave.latitude,
-          grave.longitude
-        )
-      : null;
-
-    const distanceInfo =
-      distance !== null
-        ? `<div style="font-size: 13px; color: rgba(0,0,0,0.5); margin-top: 8px;">📏 Odległość: ${distance.toFixed(
-            0
-          )}m</div>`
-        : '';
-
-    return `
-      <div style="padding: 16px; min-height: 100px;">
-        <div style="font-size: 16px; margin-bottom: 12px; line-height: 1.5;">
-          ${names || '<em>Brak informacji</em>'}
-        </div>
-        <div style="font-size: 14px; color: rgba(0,0,0,0.6); margin-bottom: 8px;">
-          <strong>📍 ${grave.cemeteryName}</strong>
-        </div>
-        <div style="font-size: 13px; color: rgba(0,0,0,0.5);">
-          ${location}
-        </div>
-        ${distanceInfo}
-        <button 
-          onclick="window.navigateToGrave('${grave.id}')"
-          style="
-            margin-top: 12px;
-            width: 100%;
-            padding: 10px 16px;
-            background: #43a047;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: background 0.2s;
-          "
-          onmouseover="this.style.background='#388e3c'"
-          onmouseout="this.style.background='#43a047'"
-        >
-          <span style="font-size: 18px;">🧭</span> Nawiguj do grobu
-        </button>
-      </div>
-    `;
   }
 
   /**
@@ -349,15 +401,16 @@ export class MapPageComponent implements OnDestroy {
   }
 
   /**
-   * Otwiera nawigację do konkretnego grobu w Google Maps
+   * Wyznacza trasę tylko do jednego grobu i rozpoczyna nawigację na mapie
    */
   navigateToGrave(graveId: string): void {
     const grave = this.graveService.graves().find((g) => g.id === graveId);
     if (!grave) return;
 
-    // Otwórz Google Maps z nawigacją do grobu
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${grave.latitude},${grave.longitude}`;
-    window.open(url, '_blank');
+    this.plannedRoute = [grave];
+    this.totalRouteDistance = this.calculateTotalRouteDistance(this.plannedRoute);
+    this.drawRouteOnMap(this.plannedRoute);
+    this.startRouteNavigation();
   }
 
   /**
@@ -417,6 +470,41 @@ export class MapPageComponent implements OnDestroy {
       this.isCalculatingRoute = false;
       this.cdr.markForCheck();
     }
+  }
+
+  removeFromRoute(graveId: string): void {
+    if (this.plannedRoute.length === 0) return;
+
+    const remaining = this.plannedRoute.filter((g) => g.id !== graveId);
+
+    if (remaining.length === 0) {
+      this.clearRoute();
+      return;
+    }
+
+    if (!this.currentCoords) {
+      // Bez aktualnej lokalizacji nie da się sensownie przeliczyć TSP.
+      // Zostawiamy listę po usunięciu i czyścimy rysunek trasy.
+      this.plannedRoute = remaining;
+      this.totalRouteDistance = 0;
+      this.nextWaypoint = undefined;
+      this.isNavigationActive = false;
+      this.applyUserMarkerIcon();
+      this.clearRouteFromMap();
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const recalculated = this.solveTSPNearestNeighbor(
+      this.currentCoords.latitude,
+      this.currentCoords.longitude,
+      remaining
+    );
+
+    this.plannedRoute = recalculated;
+    this.totalRouteDistance = this.calculateTotalRouteDistance(recalculated);
+    this.drawRouteOnMap(recalculated);
+    this.cdr.markForCheck();
   }
 
   /**
@@ -510,7 +598,13 @@ export class MapPageComponent implements OnDestroy {
       ...route.map((grave) => [grave.latitude, grave.longitude] as L.LatLngExpression),
     ];
 
-    console.log('🗺️ Rysowanie trasy przez punkty:', points);
+    route.forEach((grave, index) => {
+      console.log(`  Punkt ${index + 1} (${this.getGraveTitle(grave)}):`, {
+        latitude: grave.latitude,
+        longitude: grave.longitude,
+        latLngArray: [grave.latitude, grave.longitude],
+      });
+    });
 
     // Rysuj linię trasy - prosta linia przez wszystkie punkty
     this.routeLine = L.polyline(points, {
@@ -523,13 +617,8 @@ export class MapPageComponent implements OnDestroy {
       smoothFactor: 0, // WAŻNE: 0 = dokładne przejście przez punkty, bez wygładzania
     }).addTo(this.mapInstance);
 
-    // Ustaw zIndex żeby linia była widoczna ale pod markerami
-    if (this.routeLine) {
-      (this.routeLine as any).setZIndex(100);
-    }
-
-    // Dodaj strzałki kierunku wzdłuż trasy
-    this.addDirectionArrows(points);
+    // Polilinia nie ma setZIndex() w Leaflet; dla pewności trzymamy ją pod markerami
+    this.routeLine.bringToBack();
 
     // Dodaj numerację punktów trasy
     route.forEach((grave, index) => {
@@ -564,11 +653,17 @@ export class MapPageComponent implements OnDestroy {
     // Dopasuj widok mapy do trasy
     const bounds = L.latLngBounds(points);
     this.mapInstance.fitBounds(bounds, { padding: [50, 50] });
+
+    // Od razu wylicz i pokaż kierunek do pierwszego punktu
+    this.updateNextWaypointGuidance();
   }
 
   clearRoute(): void {
     this.plannedRoute = [];
     this.totalRouteDistance = 0;
+    this.nextWaypoint = undefined;
+    this.isNavigationActive = false;
+    this.applyUserMarkerIcon();
     this.clearRouteFromMap();
     this.cdr.markForCheck();
   }
@@ -578,10 +673,6 @@ export class MapPageComponent implements OnDestroy {
       this.routeLine.remove();
       this.routeLine = undefined;
     }
-
-    // Usuń strzałki kierunku
-    this.routeArrows.forEach((arrow) => arrow.remove());
-    this.routeArrows = [];
 
     // Usuń markery numerów (są one dodawane dynamicznie)
     if (this.mapInstance) {
@@ -593,49 +684,6 @@ export class MapPageComponent implements OnDestroy {
           }
         }
       });
-    }
-  }
-
-  /**
-   * Dodaje strzałki kierunku wzdłuż trasy
-   */
-  private addDirectionArrows(points: L.LatLngExpression[]): void {
-    if (!this.mapInstance || points.length < 2) return;
-
-    // Dla każdego segmentu trasy, dodaj strzałkę na środku
-    for (let i = 0; i < points.length - 1; i++) {
-      const p1 = points[i] as [number, number];
-      const p2 = points[i + 1] as [number, number];
-
-      // Oblicz punkt środkowy
-      const midLat = (p1[0] + p2[0]) / 2;
-      const midLng = (p1[1] + p2[1]) / 2;
-
-      // Oblicz kąt rotacji strzałki
-      const angle = this.calculateBearing(p1[0], p1[1], p2[0], p2[1]);
-
-      // Utwórz ikonę strzałki z SVG
-      const arrowIcon = L.divIcon({
-        html: `
-          <svg width="30" height="30" viewBox="0 0 30 30" style="transform: rotate(${angle}deg);">
-            <path d="M15 5 L25 15 L15 25 L15 19 L5 19 L5 11 L15 11 Z" 
-                  fill="#5C6BC0" 
-                  stroke="white" 
-                  stroke-width="2"/>
-          </svg>
-        `,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-        className: 'route-arrow-marker',
-      });
-
-      // Dodaj marker strzałki
-      const arrow = L.marker([midLat, midLng], {
-        icon: arrowIcon,
-        zIndexOffset: 200,
-      }).addTo(this.mapInstance);
-
-      this.routeArrows.push(arrow);
     }
   }
 
@@ -653,31 +701,21 @@ export class MapPageComponent implements OnDestroy {
       Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
 
     const bearing = Math.atan2(y, x) * (180 / Math.PI);
-    return bearing;
+    // Normalizacja do zakresu 0..360 (łatwiejsze do rotacji)
+    return (bearing + 360) % 360;
   }
 
   /**
-   * Otwiera nawigację Google Maps z wszystkimi punktami trasy
+   * Rozpoczyna nawigację na mapie (strzałka zamiast pinezki lokalizacji)
    */
   startRouteNavigation(): void {
     if (!this.currentCoords || this.plannedRoute.length === 0) return;
-
-    // Google Maps API wspiera do 9 waypoints, więc limitujemy
-    const maxWaypoints = Math.min(this.plannedRoute.length - 1, 9);
-    const waypoints = this.plannedRoute
-      .slice(0, maxWaypoints)
-      .map((g) => `${g.latitude},${g.longitude}`)
-      .join('|');
-
-    const lastGrave = this.plannedRoute[maxWaypoints];
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${this.currentCoords.latitude},${this.currentCoords.longitude}&destination=${lastGrave.latitude},${lastGrave.longitude}&waypoints=${waypoints}&travelmode=walking`;
-
-    window.open(url, '_blank');
+    this.isNavigationActive = true;
+    this.updateNextWaypointGuidance();
   }
 
   ngOnDestroy(): void {
     this.watchSub?.unsubscribe();
     this.clearRouteFromMap();
-    delete (window as any).navigateToGrave;
   }
 }
