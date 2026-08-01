@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/@angular/service-worker/config/schema.json",
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app",
+      "installMode": "prefetch",
+      "resources": {
+        "files": [
+          "/favicon.ico",
+          "/index.html",
+          "/manifest.webmanifest",
+          "/*.css",
+          "/*.js"
+        ]
+      }
+    },
+    {
+      "name": "assets",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/media/**",
+          "/*.(svg|cur|jpg|jpeg|png|apng|webp|avif|gif|otf|ttf|woff|woff2)"
+        ]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "osm-tiles",
+      "urls": [
+        "https://a.tile.openstreetmap.org/**",
+        "https://b.tile.openstreetmap.org/**",
+        "https://c.tile.openstreetmap.org/**"
+      ],
+      "cacheConfig": {
+        "maxSize": 4000,
+        "maxAge": "30d",
+        "strategy": "performance"
+      }
+    },
+    {
+      "name": "esri-tiles",
+      "urls": [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/**"
+      ],
+      "cacheConfig": {
+        "maxSize": 4000,
+        "maxAge": "30d",
+        "strategy": "performance"
+      }
+    },
+    {
+      "name": "google-fonts",
+      "urls": [
+        "https://fonts.googleapis.com/**",
+        "https://fonts.gstatic.com/**"
+      ],
+      "cacheConfig": {
+        "maxSize": 30,
+        "maxAge": "365d",
+        "strategy": "performance"
+      }
+    }
+  ]
+}

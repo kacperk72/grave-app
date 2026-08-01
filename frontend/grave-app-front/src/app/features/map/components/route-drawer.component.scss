@@ -1,0 +1,245 @@
+:host ::ng-deep .route-drawer {
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  background: var(--surface);
+
+  .p-drawer-header {
+    padding: 16px 20px 8px;
+  }
+
+  .p-drawer-content {
+    padding: 0 20px 24px;
+  }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  i {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background: var(--forest);
+    color: #fbf9f3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  h3 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  small {
+    color: var(--ink-muted);
+    font-size: 12px;
+  }
+}
+
+.drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.distance-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+
+  label {
+    font-size: 14px;
+    color: var(--ink-muted);
+
+    strong {
+      color: var(--forest);
+      margin-left: 6px;
+    }
+  }
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  &__main {
+    flex: 1;
+  }
+}
+
+:host ::ng-deep .action-row__main .p-button {
+  width: 100%;
+}
+
+.route-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 14px;
+  background: var(--beige);
+  border-radius: var(--radius-md);
+
+  .summary-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    i {
+      color: var(--sage);
+      font-size: 22px;
+    }
+
+    div {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+
+    strong {
+      font-family: var(--font-serif);
+      font-size: 18px;
+      color: var(--ink);
+    }
+
+    span {
+      font-size: 11px;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+.next-waypoint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--forest) 35%, var(--hairline));
+  border-radius: var(--radius-md);
+
+  .bearing-icon {
+    color: var(--forest);
+    font-size: 28px;
+    transition: transform 0.3s ease;
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    line-height: 1.2;
+
+    small {
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    strong {
+      font-family: var(--font-serif);
+      font-size: 16px;
+      color: var(--ink);
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--ink-muted);
+    }
+  }
+}
+
+.route-list {
+  h4 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+  }
+
+  ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 280px;
+    overflow-y: auto;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--paper);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-sm);
+      transition: background 0.15s ease;
+
+      &:hover {
+        background: var(--beige);
+      }
+
+      .bullet {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--beige-strong);
+        color: var(--forest-strong);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+
+      .info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+
+        strong {
+          font-family: var(--font-serif);
+          font-size: 15px;
+          color: var(--ink);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        small {
+          font-size: 12px;
+          color: var(--ink-muted);
+        }
+      }
+    }
+  }
+}
+
+:host ::ng-deep .navigate-btn .p-button {
+  width: 100%;
+}

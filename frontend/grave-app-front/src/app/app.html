@@ -3,7 +3,7 @@
     #drawer
     class="app-sidenav"
     mode="over"
-    [opened]="isSidenavOpen"
+    [opened]="isSidenavOpen()"
     (closedStart)="closeSidenav()"
   >
     <app-sidenav (close)="closeSidenav()" />
@@ -11,8 +11,9 @@
 
   <mat-sidenav-content class="app-content">
     <app-header (toggleSidenav)="toggleSidenav()" />
-    <main class="page-container">
+    <main class="page-container" [class.edge-to-edge]="isEdgeToEdge()">
       <router-outlet />
     </main>
+    <app-bottom-nav />
   </mat-sidenav-content>
 </mat-sidenav-container>

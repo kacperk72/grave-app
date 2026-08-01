@@ -1,60 +1,84 @@
-import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+
+import { ToastModule } from 'primeng/toast';
+import { ButtonModule } from 'primeng/button';
+import { MessageService } from 'primeng/api';
 
 import { GraveFormComponent } from '../../components/grave-form/grave-form.component';
 import { GraveService } from '../../services/grave.service';
-import { CreateGraveDto } from '../../../../shared/models/grave.model';
+import { CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
 
-/**
- * Strona dodawania nowego grobu
- */
 @Component({
   selector: 'app-add-grave-page',
-  imports: [GraveFormComponent, MatSnackBarModule],
+  imports: [GraveFormComponent, ToastModule, ButtonModule],
+  providers: [MessageService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="add-grave-page">
       <header class="page-header">
-        <h1>Dodaj nowy grób</h1>
-        <p>Wypełnij formularz aby zapisać lokalizację grobu</p>
+        <p-button
+          [text]="true"
+          severity="secondary"
+          icon="pi pi-arrow-left"
+          label="Wróć"
+          (onClick)="onCancel()"
+          styleClass="back-btn"
+        />
+        <div>
+          <h1>Dodaj nowy grób</h1>
+          <p>Wypełnij formularz, aby zapisać lokalizację grobu</p>
+        </div>
       </header>
 
       <app-grave-form (save)="onSave($event)" (cancel)="onCancel()" />
+
+      <p-toast position="top-center" />
     </div>
   `,
   styles: [
     `
+      :host {
+        display: block;
+      }
+
       .add-grave-page {
-        max-width: 900px;
+        max-width: 920px;
         margin: 0 auto;
-        padding: 16px;
       }
 
       .page-header {
-        margin-bottom: 32px;
-        text-align: center;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        margin-bottom: 28px;
 
         h1 {
-          margin: 0 0 8px 0;
-          font-size: 32px;
-          font-weight: 500;
+          margin: 0 0 4px;
+          font-family: var(--font-serif);
+          font-size: 28px;
+          font-weight: 600;
+          color: var(--ink);
         }
 
         p {
           margin: 0;
-          color: rgba(0, 0, 0, 0.6);
-          font-size: 16px;
+          color: var(--ink-muted);
+          font-size: 14px;
         }
       }
 
       @media (max-width: 600px) {
-        .add-grave-page {
-          padding: 8px;
-        }
+        .page-header {
+          margin-bottom: 16px;
 
-        .page-header h1 {
-          font-size: 24px;
+          h1 {
+            font-size: 20px;
+          }
+
+          p {
+            font-size: 13px;
+          }
         }
       }
     `,
@@ -63,27 +87,25 @@ import { CreateGraveDto } from '../../../../shared/models/grave.model';
 export class AddGravePageComponent {
   private readonly graveService = inject(GraveService);
   private readonly router = inject(Router);
-  private readonly snackBar = inject(MatSnackBar);
+  private readonly toast = inject(MessageService);
 
-  async onSave(dto: CreateGraveDto | any): Promise<void> {
+  async onSave(dto: CreateGraveDto | UpdateGraveDto): Promise<void> {
     try {
-      const grave = await this.graveService.addGrave(dto as CreateGraveDto);
-
-      this.snackBar.open('Grób został dodany pomyślnie', 'OK', {
-        duration: 3000,
-        horizontalPosition: 'center',
-        verticalPosition: 'bottom',
+      await this.graveService.addGrave(dto as CreateGraveDto);
+      this.toast.add({
+        severity: 'success',
+        summary: 'Dodano grób',
+        detail: 'Lokalizacja zapisana pomyślnie',
+        life: 2500,
       });
-
-      // Przekieruj do listy lub szczegółów
-      this.router.navigate(['/graves']);
+      setTimeout(() => this.router.navigate(['/graves']), 800);
     } catch (error) {
       console.error('Error adding grave:', error);
-      this.snackBar.open('Wystąpił błąd podczas dodawania grobu', 'OK', {
-        duration: 5000,
-        horizontalPosition: 'center',
-        verticalPosition: 'bottom',
-        panelClass: ['error-snackbar'],
+      this.toast.add({
+        severity: 'error',
+        summary: 'Błąd',
+        detail: 'Nie udało się dodać grobu',
+        life: 4000,
       });
     }
   }

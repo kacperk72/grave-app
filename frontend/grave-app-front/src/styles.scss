@@ -1,5 +1,8 @@
 @use '@angular/material' as mat;
-/* You can add global styles to this file, and also import other style files */
+/* Global styles for GraveMap. */
+
+// Cascade layers: theme < base < primeng < (unlayered app overrides win).
+@layer theme, base, primeng;
 
 @include mat.core();
 
@@ -12,14 +15,14 @@ $grave-app-theme: mat.define-theme(
     ),
     typography: (
       plain-family: (
-        'Roboto',
-        'Helvetica Neue',
+        'Inter',
+        system-ui,
         sans-serif,
       ),
       brand-family: (
-        'Roboto',
-        'Helvetica Neue',
-        sans-serif,
+        'Spectral',
+        Georgia,
+        serif,
       ),
     ),
     density: (
@@ -30,53 +33,280 @@ $grave-app-theme: mat.define-theme(
 
 @include mat.all-component-themes($grave-app-theme);
 
-// Custom Variables from Documentation
+/* ------------------------------------------------------------------ *
+ *  Design tokens — paleta „papier / szałwia / miedź"
+ * ------------------------------------------------------------------ */
 :root {
-  @include mat.system-level-colors($grave-app-theme);
-  @include mat.system-level-typography($grave-app-theme);
+  // Typografia
+  --font-serif: 'Spectral', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  --primary-color: var(--mat-sys-primary);
-  --secondary-color: var(--mat-sys-secondary);
-  --accent-color: var(--mat-sys-tertiary);
+  // Powierzchnie
+  --paper: #f3eee3; // tło aplikacji
+  --paper-2: #ece5d6; // wgłębienia / paski
+  --surface: #fbf9f3; // karty
+  --surface-raised: #ffffff;
 
-  --success-color: #43a047;
-  --error-color: #e53935;
-  --warning-color: #fb8c00;
-  --info-color: #1976d2;
+  // Zieleń
+  --forest: #3f4d3c; // kolor główny (przyciski, logo, aktywne)
+  --forest-strong: #34402f;
+  --sage: #6f7b5d; // ikony, akcenty
+  --sage-soft: #aab199;
 
-  --background-color: var(--mat-sys-surface);
-  --surface-color: var(--mat-sys-surface-container-low);
-  --text-primary-color: var(--mat-sys-on-surface);
-  --text-secondary-color: var(--mat-sys-on-surface-variant);
+  // Beż / pigułki
+  --beige: #e7e0cf;
+  --beige-strong: #dcd3bd;
+
+  // Miedź (akcent CTA + ostrzeżenia)
+  --copper: #c88a4a;
+  --copper-strong: #b3763a;
+  --copper-tint: #f5e8d5;
+  --copper-ink: #a9682d;
+
+  // Tekst
+  --ink: #2e322a;
+  --ink-muted: #7b7d6d;
+  --ink-faint: #a3a493;
+
+  // Linie / stany
+  --hairline: #e3dccc;
+  --danger: #b5493b;
+  --danger-tint: #f6e6df;
+
+  // Kształt / cień
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
+  --shadow-card: 0 6px 22px rgba(45, 50, 40, 0.07);
+  --shadow-float: 0 12px 34px rgba(45, 50, 40, 0.16);
+
+  // Semantyczne aliasy (kompatybilność wstecz)
+  --primary-color: var(--forest);
+  --secondary-color: var(--sage);
+  --accent-color: var(--copper);
+  --success-color: #4f6a3e;
+  --error-color: var(--danger);
+  --warning-color: var(--copper-strong);
+  --info-color: var(--sage);
+  --background-color: var(--paper);
+  --surface-color: var(--surface);
+  --text-primary-color: var(--ink);
+  --text-secondary-color: var(--ink-muted);
+
+  // Mapowanie na Angular Material
+  --mat-sys-surface: var(--paper);
+  --mat-sys-surface-container-low: var(--surface);
+  --mat-sys-on-surface: var(--ink);
+  --mat-sys-on-surface-variant: var(--ink-muted);
+  --mat-sys-primary: var(--forest);
 }
 
+/* Tryb ciemny — współdzieli selektor `.app-dark` z presetem PrimeNG */
+html.app-dark {
+  --paper: #23281f;
+  --paper-2: #1d221a;
+  --surface: #2c3227;
+  --surface-raised: #333a2d;
+
+  --forest: #7f9167; // rozjaśniony dla kontrastu na ciemnym
+  --forest-strong: #8ea075;
+  --sage: #9aa688;
+  --sage-soft: #6f7a5e;
+
+  --beige: #39402f;
+  --beige-strong: #454d39;
+
+  --copper: #ce9a5c;
+  --copper-strong: #d9a869;
+  --copper-tint: #3a3323;
+  --copper-ink: #d9a869;
+
+  --ink: #ece7d8;
+  --ink-muted: #9ea08d;
+  --ink-faint: #7c7e6d;
+
+  --hairline: #3a4131;
+  --danger: #d17a6c;
+  --danger-tint: #3a2823;
+
+  --shadow-card: 0 6px 22px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Podstawy
+ * ------------------------------------------------------------------ */
 html,
 body {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow-x: hidden; // Prevent horizontal scroll
+  overflow-x: hidden;
 }
 
 body {
-  font-family: Roboto, 'Helvetica Neue', sans-serif;
-  background-color: var(--background-color);
-  color: var(--text-primary-color);
+  font-family: var(--font-sans);
+  background-color: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
   box-sizing: border-box;
 }
 
-// Global Map Styles
+h1,
+h2,
+h3,
+.serif {
+  font-family: var(--font-serif);
+  letter-spacing: 0.01em;
+}
+
+// Wspólny „eyebrow" — mała etykieta wersalikami z rozstrzeleniem
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+// Mapa
 .map-container {
   height: 100%;
   width: 100%;
   z-index: 1;
 }
 
-// Custom FAB button styling
-.mat-mdc-fab {
-  --mat-fab-container-color: white !important;
-  background-color: white !important;
+/* ------------------------------------------------------------------ *
+ *  Nadpisania PrimeNG (poza warstwą `primeng`, więc wygrywają)
+ * ------------------------------------------------------------------ */
+:root {
+  --p-primary-color: var(--forest);
+  --p-primary-contrast-color: #fbf9f3;
+  --p-content-border-radius: var(--radius-md);
+  --p-border-radius: var(--radius-md);
+}
+
+// Przyciski
+.p-button {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  transition: transform 0.12s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.p-button:not(.p-button-text):not(.p-button-outlined) {
+  background: var(--forest);
+  border-color: var(--forest);
+  color: #fbf9f3;
+}
+.p-button:not(.p-button-text):not(.p-button-outlined):hover {
+  background: var(--forest-strong);
+  border-color: var(--forest-strong);
+}
+.p-button.p-button-secondary:not(.p-button-text):not(.p-button-outlined) {
+  background: var(--beige);
+  border-color: var(--beige);
+  color: var(--ink);
+}
+.p-button.p-button-text {
+  color: var(--forest);
+  background: transparent;
+}
+.p-button.p-button-text.p-button-secondary {
+  color: var(--ink-muted);
+}
+.p-button.p-button-text:hover {
+  background: color-mix(in srgb, var(--forest) 10%, transparent);
+}
+.p-button.p-button-outlined {
+  color: var(--forest);
+  border-color: var(--hairline);
+  background: var(--surface);
+}
+
+// Karty
+.p-card {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+.p-card .p-card-title {
+  font-family: var(--font-serif);
+  color: var(--ink);
+}
+.p-card .p-card-content {
+  color: var(--ink);
+}
+
+// Tagi / pigułki
+.p-tag {
+  background: var(--beige);
+  color: var(--ink);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+.p-tag.p-tag-success {
+  background: color-mix(in srgb, var(--forest) 18%, var(--surface));
+  color: var(--forest-strong);
+}
+.p-tag.p-tag-secondary {
+  background: var(--beige);
+  color: var(--ink-muted);
+}
+.p-tag.p-tag-danger {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+.p-tag.p-tag-info {
+  background: var(--beige);
+  color: var(--sage);
+}
+
+// Pola tekstowe / select
+.p-inputtext,
+.p-select,
+.p-textarea {
+  background: var(--surface-raised);
+  border-color: var(--hairline);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+}
+.p-inputtext:focus,
+.p-select.p-focus,
+.p-textarea:focus {
+  border-color: var(--sage);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sage) 22%, transparent);
+}
+
+// Przełącznik
+.p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background: var(--forest);
+}
+
+// Dialog / drawer / bottom sheet
+.p-dialog,
+.p-drawer {
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius-lg);
+}
+.p-dialog .p-dialog-header,
+.p-drawer .p-drawer-header {
+  background: transparent;
+  color: var(--ink);
+}
+
+// Toast
+.p-toast .p-toast-message {
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
 }

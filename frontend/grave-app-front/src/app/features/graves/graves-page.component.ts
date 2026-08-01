@@ -1,100 +1,104 @@
-import { Component, computed, effect, inject, ChangeDetectionStrategy } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSelectModule } from '@angular/material/select';
 import { FormsModule } from '@angular/forms';
+
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { IconFieldModule } from 'primeng/iconfield';
+import { InputIconModule } from 'primeng/inputicon';
 
 import { GraveService } from './services/grave.service';
 import { GeolocationService } from '../../core/services/geolocation.service';
 import { GravesListComponent } from './components/graves-list/graves-list.component';
 import { GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 
-/**
- * Strona główna modułu grobów
- * Wyświetla listę wszystkich grobów z możliwością wyszukiwania i sortowania
- */
+interface SortOptionItem {
+  label: string;
+  value: SortOption;
+  disabled?: boolean;
+}
+
 @Component({
   selector: 'app-graves-page',
   imports: [
     RouterModule,
     FormsModule,
-    MatButtonModule,
-    MatIconModule,
-    MatInputModule,
-    MatFormFieldModule,
-    MatSelectModule,
+    ButtonModule,
+    InputTextModule,
+    IconFieldModule,
+    InputIconModule,
     GravesListComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="graves-page">
-      <!-- Header z wyszukiwaniem -->
-      <section class="graves-header">
-        <div class="header-content">
-          <h1>Moje groby</h1>
-          <p class="graves-count">{{ displayedGraves().length }} lokalizacji</p>
-        </div>
+      <header class="graves-header">
+        <span class="eyebrow">Zapisane lokalizacje</span>
+        <h1>Moje groby</h1>
+        <p class="count">
+          {{ graveService.gravesCount() }}
+          {{ graveService.gravesCount() === 1 ? 'miejsce' : 'miejsca' }} na
+          {{ cemeteriesCount() }} {{ cemeteriesCount() === 1 ? 'cmentarzu' : 'cmentarzach' }} ·
+          dane dostępne offline
+        </p>
 
-        <!-- Wyszukiwarka -->
-        <mat-form-field appearance="outline" class="search-field">
-          <mat-label>Szukaj po nazwisku lub cmentarzu</mat-label>
-          <input
-            matInput
-            [(ngModel)]="searchQuery"
-            (ngModelChange)="onSearchChange($event)"
-            placeholder="Wpisz nazwisko..."
-          />
-          <mat-icon matPrefix>search</mat-icon>
-          @if (searchQuery) {
-          <button mat-icon-button matSuffix (click)="clearSearch()" aria-label="Wyczyść">
-            <mat-icon>close</mat-icon>
-          </button>
-          }
-        </mat-form-field>
+        <div class="tools">
+          <p-iconfield class="search">
+            <p-inputicon class="pi pi-search" />
+            <input
+              pInputText
+              type="text"
+              [(ngModel)]="searchQuery"
+              (ngModelChange)="onSearchChange($event)"
+              placeholder="Szukaj po nazwisku, cmentarzu, sektorze…"
+              class="search-input"
+            />
+            @if (searchQuery) {
+            <p-inputicon
+              class="pi pi-times clear-icon"
+              (click)="clearSearch()"
+              role="button"
+              aria-label="Wyczyść"
+            />
+            }
+          </p-iconfield>
 
-        <!-- Sortowanie -->
-        <div class="controls">
-          <mat-form-field appearance="outline" class="sort-field">
-            <mat-label>Sortuj według</mat-label>
-            <mat-select [(ngModel)]="sortBy" (ngModelChange)="onSortChange($event)">
-              <mat-option value="name">Nazwisko</mat-option>
-              <mat-option value="date-added">Data dodania</mat-option>
-              <mat-option value="last-visited">Ostatnio odwiedzony</mat-option>
-              <mat-option value="distance" [disabled]="!userLocation()">
-                Odległość {{ !userLocation() ? '(brak GPS)' : '' }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
+          <div class="sort-row">
+            <span class="sort-label"><i class="pi pi-sort-alt"></i> Sortuj</span>
+            <div class="chips">
+              @for (opt of sortOptions(); track opt.value) {
+              <button
+                type="button"
+                class="chip"
+                [class.active]="sortBy === opt.value"
+                [disabled]="opt.disabled"
+                (click)="selectSort(opt.value)"
+              >
+                {{ opt.label }}
+              </button>
+              }
+            </div>
+          </div>
 
           @if (graveService.gravesCount() === 0 && !graveService.isLoading()) {
-          <button
-            mat-raised-button
-            color="accent"
-            (click)="generateMockData()"
-            aria-label="Wygeneruj dane testowe"
-            class="mock-button"
-          >
-            <mat-icon>science</mat-icon>
-            Wygeneruj dane testowe
-          </button>
+          <p-button
+            severity="warn"
+            icon="pi pi-bolt"
+            label="Wygeneruj dane testowe"
+            (onClick)="generateMockData()"
+            styleClass="mock-button"
+          />
           }
-
-          <button
-            mat-fab
-            color="primary"
-            routerLink="/graves/add"
-            aria-label="Dodaj grób"
-            class="fab-add"
-          >
-            <mat-icon>add</mat-icon>
-          </button>
         </div>
-      </section>
+      </header>
 
-      <!-- Lista grobów -->
       <app-graves-list
         [graves]="displayedGraves()"
         [loading]="graveService.isLoading()"
@@ -103,11 +107,10 @@ import { GraveWithDistance, SortOption } from '../../shared/models/grave.model';
         (navigate)="onNavigate($event)"
       />
 
-      <!-- Statystyki (opcjonalnie) -->
       @if (displayedGraves().length > 0) {
-      <section class="graves-stats">
+      <section class="stats">
         <div class="stat-card">
-          <mat-icon>location_on</mat-icon>
+          <div class="stat-icon"><i class="pi pi-map-marker"></i></div>
           <div>
             <strong>{{ graveService.gravesCount() }}</strong>
             <span>Groby</span>
@@ -116,7 +119,7 @@ import { GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 
         @if (paymentsDueCount() > 0) {
         <div class="stat-card">
-          <mat-icon color="warn">warning</mat-icon>
+          <div class="stat-icon stat-icon--warn"><i class="pi pi-exclamation-triangle"></i></div>
           <div>
             <strong>{{ paymentsDueCount() }}</strong>
             <span>Wygasające opłaty</span>
@@ -124,204 +127,227 @@ import { GraveWithDistance, SortOption } from '../../shared/models/grave.model';
         </div>
         } @if (userLocation()) {
         <div class="stat-card">
-          <mat-icon>near_me</mat-icon>
+          <div class="stat-icon"><i class="pi pi-compass"></i></div>
           <div>
             <strong>{{ nearbyCount() }}</strong>
-            <span>W pobliżu (< 5km)</span>
+            <span>W pobliżu (&lt; 5 km)</span>
           </div>
         </div>
         }
       </section>
       }
+
+      <a routerLink="/graves/add" class="fab-add" aria-label="Dodaj grób">
+        <i class="pi pi-plus"></i>
+        <span>Dodaj grób</span>
+      </a>
     </div>
   `,
   styles: [
     `
+      :host {
+        display: block;
+      }
+
       .graves-page {
         max-width: 100%;
-        padding: 0;
       }
 
       .graves-header {
-        margin-bottom: 32px;
-        padding: 24px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        margin-bottom: 20px;
       }
 
-      .header-content {
-        margin-bottom: 24px;
-
-        h1 {
-          margin: 0 0 8px 0;
-          font-size: 28px;
-          font-weight: 500;
-          color: rgba(0, 0, 0, 0.87);
-        }
-
-        .graves-count {
-          margin: 0;
-          color: rgba(0, 0, 0, 0.6);
-          font-size: 14px;
-        }
+      .graves-header h1 {
+        margin: 6px 0 0;
+        font-family: var(--font-serif);
+        font-size: 32px;
+        font-weight: 600;
+        color: var(--ink);
       }
 
-      .search-field {
-        width: 100%;
-        margin-bottom: 16px;
+      .count {
+        margin: 6px 0 0;
+        color: var(--ink-muted);
+        font-size: 14px;
       }
 
-      .controls {
+      .tools {
+        margin-top: 18px;
+        padding: 16px;
+        background: var(--surface);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-card);
         display: flex;
-        gap: 16px;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      :host ::ng-deep .search {
+        display: block;
+      }
+
+      :host ::ng-deep .search input.search-input {
+        width: 100%;
+        padding-left: 2.6rem;
+        padding-right: 2.6rem;
+        height: 46px;
+        border-radius: var(--radius-pill);
+        background: var(--surface-raised);
+      }
+
+      :host ::ng-deep .clear-icon {
+        cursor: pointer;
+      }
+
+      .sort-row {
+        display: flex;
         align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
 
-        .sort-field {
-          flex: 1;
+      .sort-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        padding: 8px 16px;
+        border-radius: var(--radius-pill);
+        border: 1px solid var(--hairline);
+        background: var(--surface-raised);
+        color: var(--ink-muted);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        &:hover:not(:disabled):not(.active) {
+          border-color: var(--sage-soft);
+          color: var(--ink);
         }
 
-        .fab-add {
-          flex-shrink: 0;
+        &.active {
+          background: var(--forest);
+          border-color: var(--forest);
+          color: #fbf9f3;
         }
 
-        .mock-button {
-          flex-shrink: 0;
+        &:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
         }
       }
 
-      .graves-stats {
+      :host ::ng-deep .mock-button {
+        align-self: flex-start;
+      }
+
+      .stats {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 16px;
-        margin-top: 32px;
-        padding: 24px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        margin-top: 20px;
       }
 
       .stat-card {
         display: flex;
         align-items: center;
-        gap: 16px;
-        padding: 20px;
-        background: linear-gradient(135deg, #f5f5f5 0%, #fafafa 100%);
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        transition: all 0.2s ease;
+        gap: 14px;
+        padding: 18px;
+        background: var(--surface);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-card);
+
+        > div:not(.stat-icon) {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.1;
+        }
+
+        strong {
+          font-family: var(--font-serif);
+          font-size: 24px;
+          color: var(--ink);
+        }
+
+        span {
+          font-size: 11px;
+          color: var(--ink-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-top: 4px;
+        }
+      }
+
+      .stat-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: var(--radius-sm);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        flex-shrink: 0;
+        background: var(--beige);
+        color: var(--sage);
+
+        &--warn {
+          background: var(--copper-tint);
+          color: var(--copper-ink);
+        }
+      }
+
+      .fab-add {
+        position: fixed;
+        right: 20px;
+        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+        z-index: 800;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 20px;
+        border-radius: var(--radius-pill);
+        background: var(--copper);
+        color: #fbf9f3;
+        text-decoration: none;
+        font-family: var(--font-sans);
+        font-weight: 600;
+        font-size: 15px;
+        box-shadow: var(--shadow-float);
+        transition: transform 0.14s ease, background 0.15s ease;
+
+        i {
+          font-size: 16px;
+        }
 
         &:hover {
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+          background: var(--copper-strong);
           transform: translateY(-2px);
         }
 
-        mat-icon {
-          font-size: 40px;
-          width: 40px;
-          height: 40px;
-          color: var(--primary-color);
-        }
-
-        div {
-          display: flex;
-          flex-direction: column;
-
-          strong {
-            font-size: 28px;
-            font-weight: 600;
-            line-height: 1;
-            margin-bottom: 6px;
-            color: rgba(0, 0, 0, 0.87);
-          }
-
-          span {
-            font-size: 13px;
-            color: rgba(0, 0, 0, 0.6);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
+        @media (min-width: 900px) {
+          bottom: 28px;
         }
       }
 
       @media (max-width: 599px) {
-        .graves-page {
-          padding: 0;
-        }
-
-        .graves-header {
-          padding: 12px;
-          border-radius: 0;
-          margin-bottom: 16px;
-        }
-
-        .header-content {
-          margin-bottom: 16px;
-
-          h1 {
-            font-size: 22px;
-          }
-
-          .graves-count {
-            font-size: 13px;
-          }
-        }
-
-        .search-field {
-          margin-bottom: 12px;
-        }
-
-        .controls {
-          flex-direction: column;
-          align-items: stretch;
-          gap: 12px;
-
-          .sort-field {
-            width: 100%;
-          }
-
-          .fab-add {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 100;
-            box-shadow: 0 4px 16px rgba(46, 125, 50, 0.4);
-          }
-        }
-
-        .graves-stats {
-          grid-template-columns: 1fr;
-          padding: 12px;
-          gap: 12px;
-          margin-top: 16px;
-          border-radius: 0;
-        }
-
-        .stat-card {
-          padding: 14px;
-
-          mat-icon {
-            font-size: 36px;
-            width: 36px;
-            height: 36px;
-          }
-
-          div strong {
-            font-size: 24px;
-          }
-
-          div span {
-            font-size: 12px;
-          }
-        }
-      }
-
-      @media (min-width: 600px) and (max-width: 959px) {
-        .graves-header {
-          padding: 20px;
-        }
-
-        .header-content h1 {
+        .graves-header h1 {
           font-size: 26px;
         }
       }
@@ -331,46 +357,57 @@ import { GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 export class GravesPageComponent {
   readonly graveService = inject(GraveService);
   private readonly geolocation = inject(GeolocationService);
+  private readonly destroyRef = inject(DestroyRef);
 
   searchQuery = '';
   sortBy: SortOption = 'name';
 
-  // Computed values
-  userLocation = computed(() => {
-    // TODO: Get from GeolocationService
-    return null as { lat: number; lng: number } | null;
+  userLocation = signal<{ lat: number; lng: number } | null>(null);
+
+  sortOptions = computed<SortOptionItem[]>(() => [
+    { label: 'Nazwisko', value: 'name' },
+    { label: 'Odległość', value: 'distance', disabled: !this.userLocation() },
+    { label: 'Data dodania', value: 'date-added' },
+    { label: 'Ostatnia wizyta', value: 'last-visited' },
+  ]);
+
+  cemeteriesCount = computed(() => {
+    const names = new Set(this.graveService.graves().map((g) => g.cemeteryName));
+    return names.size;
   });
 
   paymentsDueCount = computed(() => this.graveService.getGravesWithPaymentDue().length);
 
   nearbyCount = computed(() => {
-    const location = this.userLocation();
-    if (!location) return 0;
-
-    const gravesWithDistance = this.graveService.getGravesWithDistance(location.lat, location.lng);
-    return gravesWithDistance.filter((g) => g.distance && g.distance < 5000).length;
+    const loc = this.userLocation();
+    if (!loc) return 0;
+    return this.graveService
+      .getGravesWithDistance(loc.lat, loc.lng)
+      .filter((g) => g.distance !== undefined && g.distance < 5000).length;
   });
 
   displayedGraves = computed(() => {
-    let graves = this.graveService.filteredGraves();
+    let graves: GraveWithDistance[] = this.graveService.filteredGraves();
+    const loc = this.userLocation();
 
-    // Dodaj odległość jeśli jest lokalizacja
-    const location = this.userLocation();
-    let gravesWithDistance: GraveWithDistance[] = graves;
-
-    if (location && this.sortBy === 'distance') {
-      gravesWithDistance = this.graveService.getGravesWithDistance(location.lat, location.lng);
+    if (loc) {
+      // attach distance for the card badge and for distance sorting
+      graves = this.graveService.getGravesWithDistance(loc.lat, loc.lng);
     }
 
-    // Sortuj
-    return this.graveService.sortGraves(gravesWithDistance, this.sortBy);
+    return this.graveService.sortGraves(graves, this.sortBy);
   });
 
   constructor() {
-    // Track user location for distance calculations
-    effect(() => {
-      // TODO: Subscribe to geolocation updates
+    const sub = this.geolocation.watchPosition().subscribe({
+      next: (pos) => {
+        this.userLocation.set({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      error: () => {
+        // GPS unavailable — distance sort stays disabled
+      },
     });
+    this.destroyRef.onDestroy(() => sub.unsubscribe());
   }
 
   onSearchChange(query: string): void {
@@ -382,33 +419,32 @@ export class GravesPageComponent {
     this.graveService.searchByName('');
   }
 
-  onSortChange(sortBy: SortOption): void {
+  selectSort(sortBy: SortOption): void {
+    this.sortBy = sortBy;
     this.graveService.setSortBy(sortBy);
   }
 
   onNavigate(graveId: string): void {
-    // TODO: Implement navigation to grave
     console.log('Navigate to grave:', graveId);
   }
 
   getEmptyMessage(): string {
-    if (this.searchQuery) {
-      return 'Brak wyników wyszukiwania';
-    }
-    return 'Nie masz jeszcze żadnych grobów';
+    return this.searchQuery ? 'Brak wyników wyszukiwania' : 'Nie masz jeszcze żadnych grobów';
   }
 
   getEmptyHint(): string {
-    if (this.searchQuery) {
-      return 'Spróbuj wyszukać inną frazę';
-    }
-    return 'Dodaj pierwszy grób klikając przycisk + poniżej';
+    return this.searchQuery
+      ? 'Spróbuj wyszukać inną frazę'
+      : 'Dodaj pierwszy grób klikając przycisk „Dodaj grób"';
   }
 
   async generateMockData(): Promise<void> {
-    // Współrzędne w okolicy Krakowa (podane przez użytkownika)
-    const centerLat = 50.02704;
-    const centerLng = 19.936453;
-    await this.graveService.generateMockGraves(centerLat, centerLng, 8);
+    const loc = this.userLocation();
+    if (loc) {
+      await this.graveService.generateMockGraves(loc.lat, loc.lng, 8);
+    } else {
+      // fallback — okolice Krakowa
+      await this.graveService.generateMockGraves(50.02704, 19.936453, 8);
+    }
   }
 }

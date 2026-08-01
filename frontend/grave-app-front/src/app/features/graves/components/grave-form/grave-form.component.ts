@@ -1,49 +1,52 @@
 import {
-  Component,
   ChangeDetectionStrategy,
+  Component,
   OnInit,
+  computed,
+  inject,
   input,
   output,
-  inject,
-  computed,
   signal,
 } from '@angular/core';
-import { FormBuilder, FormGroup, FormArray, Validators, ReactiveFormsModule } from '@angular/forms';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatNativeDateModule } from '@angular/material/core';
-import { MatCardModule } from '@angular/material/card';
-import { trigger, transition, style, animate } from '@angular/animations';
+import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { animate, style, transition, trigger } from '@angular/animations';
+
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { TextareaModule } from 'primeng/textarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { IconFieldModule } from 'primeng/iconfield';
+import { InputIconModule } from 'primeng/inputicon';
+import { CardModule } from 'primeng/card';
+import { MessageModule } from 'primeng/message';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { Grave, CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
 
-/**
- * Formularz dodawania/edycji grobu
- * Multi-step wizard dla lepszego UX
- */
 @Component({
   selector: 'app-grave-form',
   templateUrl: './grave-form.component.html',
   styleUrls: ['./grave-form.component.scss'],
   imports: [
     ReactiveFormsModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatButtonModule,
-    MatIconModule,
-    MatDatepickerModule,
-    MatNativeDateModule,
-    MatCardModule,
+    ButtonModule,
+    InputTextModule,
+    InputNumberModule,
+    TextareaModule,
+    DatePickerModule,
+    IconFieldModule,
+    InputIconModule,
+    CardModule,
+    MessageModule,
+    TooltipModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
       transition(':enter', [
-        style({ opacity: 0, transform: 'translateX(20px)' }),
-        animate('300ms ease-out', style({ opacity: 1, transform: 'translateX(0)' })),
+        style({ opacity: 0, transform: 'translateX(16px)' }),
+        animate('260ms ease-out', style({ opacity: 1, transform: 'translateX(0)' })),
       ]),
     ]),
   ],
@@ -56,17 +59,18 @@ export class GraveFormComponent implements OnInit {
   private fb = inject(FormBuilder);
 
   graveForm!: FormGroup;
-  loadingLocation = false;
-  submitting = false;
+  loadingLocation = signal(false);
+  submitting = signal(false);
   currentStep = signal(0);
+  showPaymentInfo = signal(false);
 
   editMode = computed(() => !!this.grave());
 
   steps = [
-    { index: 0, label: 'Lokalizacja' },
-    { index: 1, label: 'Cmentarz' },
-    { index: 2, label: 'Osoby' },
-    { index: 3, label: 'Dodatkowe' },
+    { index: 0, label: 'Lokalizacja', icon: 'pi-map-marker' },
+    { index: 1, label: 'Cmentarz', icon: 'pi-building' },
+    { index: 2, label: 'Osoby', icon: 'pi-users' },
+    { index: 3, label: 'Dodatkowe', icon: 'pi-info-circle' },
   ];
 
   get locationGroup(): FormGroup {
@@ -75,10 +79,6 @@ export class GraveFormComponent implements OnInit {
 
   get cemeteryGroup(): FormGroup {
     return this.graveForm.get('cemetery') as FormGroup;
-  }
-
-  get deceasedGroup(): FormGroup {
-    return this.graveForm.get('deceased') as FormGroup;
   }
 
   get deceasedPersons(): FormArray {
@@ -144,7 +144,10 @@ export class GraveFormComponent implements OnInit {
       currency: grave.currency,
     });
 
-    // Zastąp deceased persons
+    if (grave.paymentDueDate || grave.lastPaymentAmount || grave.paymentPeriodMonths) {
+      this.showPaymentInfo.set(true);
+    }
+
     this.deceasedPersons.clear();
     grave.deceasedPersons.forEach((person) => {
       this.deceasedPersons.push(
@@ -168,8 +171,20 @@ export class GraveFormComponent implements OnInit {
     }
   }
 
+  togglePaymentInfo(): void {
+    const next = !this.showPaymentInfo();
+    this.showPaymentInfo.set(next);
+    if (!next) {
+      this.graveForm.patchValue({
+        paymentDueDate: null,
+        lastPaymentAmount: null,
+        paymentPeriodMonths: null,
+      });
+    }
+  }
+
   async useCurrentLocation(): Promise<void> {
-    this.loadingLocation = true;
+    this.loadingLocation.set(true);
     try {
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -186,9 +201,8 @@ export class GraveFormComponent implements OnInit {
       });
     } catch (error) {
       console.error('Error getting location:', error);
-      alert('Nie udało się pobrać lokalizacji. Sprawdź uprawnienia GPS.');
     } finally {
-      this.loadingLocation = false;
+      this.loadingLocation.set(false);
     }
   }
 
@@ -198,7 +212,7 @@ export class GraveFormComponent implements OnInit {
       return;
     }
 
-    this.submitting = true;
+    this.submitting.set(true);
 
     const formValue = this.graveForm.value;
     const dto: CreateGraveDto | UpdateGraveDto = {
@@ -224,7 +238,7 @@ export class GraveFormComponent implements OnInit {
     };
 
     this.save.emit(dto);
-    this.submitting = false;
+    this.submitting.set(false);
   }
 
   onCancel(): void {
@@ -232,32 +246,29 @@ export class GraveFormComponent implements OnInit {
   }
 
   nextStep(): void {
-    const currentStepValue = this.currentStep();
+    const current = this.currentStep();
 
-    // Validate current step
-    if (currentStepValue === 0 && this.locationGroup.invalid) {
+    if (current === 0 && this.locationGroup.invalid) {
       this.locationGroup.markAllAsTouched();
       return;
     }
-    if (currentStepValue === 1 && this.cemeteryGroup.invalid) {
+    if (current === 1 && this.cemeteryGroup.invalid) {
       this.cemeteryGroup.markAllAsTouched();
       return;
     }
-    if (currentStepValue === 2 && this.deceasedPersons.invalid) {
+    if (current === 2 && this.deceasedPersons.invalid) {
       this.deceasedPersons.markAllAsTouched();
       return;
     }
 
-    if (currentStepValue < 3) {
-      this.currentStep.set(currentStepValue + 1);
+    if (current < 3) {
+      this.currentStep.set(current + 1);
     }
   }
 
   previousStep(): void {
-    const currentStepValue = this.currentStep();
-    if (currentStepValue > 0) {
-      this.currentStep.set(currentStepValue - 1);
-    }
+    const current = this.currentStep();
+    if (current > 0) this.currentStep.set(current - 1);
   }
 
   goToStep(index: number): void {
@@ -267,16 +278,11 @@ export class GraveFormComponent implements OnInit {
   }
 
   canNavigateToStep(index: number): boolean {
-    const currentStepValue = this.currentStep();
-
-    // Can always go back
-    if (index < currentStepValue) return true;
-
-    // Can only go forward if previous steps are valid
+    const current = this.currentStep();
+    if (index < current) return true;
     if (index > 0 && this.locationGroup.invalid) return false;
     if (index > 1 && this.cemeteryGroup.invalid) return false;
     if (index > 2 && this.deceasedPersons.invalid) return false;
-
     return true;
   }
 }

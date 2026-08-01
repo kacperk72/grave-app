@@ -1,240 +1,216 @@
-import { Component, ChangeDetectionStrategy, input, output, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { MatCardModule } from '@angular/material/card';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatChipsModule } from '@angular/material/chips';
+
+import { ButtonModule } from 'primeng/button';
 
 import { GraveWithDistance } from '../../../../shared/models/grave.model';
 import { DistancePipe } from '../../../../shared/pipes/distance.pipe';
 import { DateFormatPipe } from '../../../../shared/pipes/date-format.pipe';
 
-/**
- * Komponent karty grobu - wyświetla podstawowe informacje
- * Używany w liście grobów
- */
 @Component({
   selector: 'app-grave-card',
-  imports: [
-    RouterModule,
-    MatCardModule,
-    MatButtonModule,
-    MatIconModule,
-    MatChipsModule,
-    DistancePipe,
-    DateFormatPipe,
-  ],
+  imports: [RouterModule, ButtonModule, DistancePipe, DateFormatPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <mat-card class="grave-card" [class.has-distance]="grave().distance !== undefined">
-      <mat-card-header>
-        <div class="header-content">
-          <div class="grave-info">
-            <mat-card-title>
-              @if (grave().deceasedPersons.length > 0) {
-              {{ grave().deceasedPersons[0].firstName }}
-              {{ grave().deceasedPersons[0].lastName }}
-              } @else {
-              <span class="no-name">Grób bez nazwy</span>
-              }
-            </mat-card-title>
-            <mat-card-subtitle>
-              {{ grave().cemeteryName }}
-              @if (grave().sector || grave().graveNumber) { • @if (grave().sector) { sektor
-              {{ grave().sector }}
-              } @if (grave().graveNumber) {
-              {{ grave().sector ? ', ' : '' }}nr {{ grave().graveNumber }}
-              } }
-            </mat-card-subtitle>
-          </div>
-
-          @if (grave().distance !== undefined) {
-          <div class="distance-badge">
-            <mat-icon>near_me</mat-icon>
-            <span>{{ grave().distance | distance }}</span>
-          </div>
+    <article class="grave-card">
+      <div class="card-main">
+        <div
+          class="thumb"
+          [class.placeholder]="!primaryPhoto()"
+          [style.background-image]="primaryPhoto() ? 'url(' + primaryPhoto() + ')' : null"
+        >
+          @if (!primaryPhoto()) {
+          <i class="pi pi-image"></i>
           }
         </div>
 
-        @if (primaryPhoto()) {
-        <div class="grave-image" [style.background-image]="'url(' + primaryPhoto() + ')'"></div>
-        } @else {
-        <div class="grave-image placeholder">
-          <mat-icon>photo</mat-icon>
-        </div>
-        }
-      </mat-card-header>
-
-      <mat-card-content>
-        <!-- Osoby zmarłe -->
-        @if (grave().deceasedPersons.length > 1) {
-        <div class="deceased-list">
-          <mat-chip-listbox class="deceased-chips">
-            @for (person of grave().deceasedPersons.slice(1, 3); track person.id) {
-            <mat-chip-option disabled>
-              {{ person.firstName }} {{ person.lastName }}
-            </mat-chip-option>
-            } @if (grave().deceasedPersons.length > 3) {
-            <mat-chip-option disabled> +{{ grave().deceasedPersons.length - 3 }} </mat-chip-option>
+        <div class="info">
+          <h3 class="name">
+            @if (grave().deceasedPersons.length > 0) {
+            {{ grave().deceasedPersons[0].firstName }} {{ grave().deceasedPersons[0].lastName
+            }}@if (grave().deceasedPersons.length > 1) {<span class="more"
+              >&nbsp;+{{ grave().deceasedPersons.length - 1 }}</span
+            >}
+            } @else {
+            <span class="no-name">Grób bez nazwy</span>
             }
-          </mat-chip-listbox>
-        </div>
-        }
+          </h3>
 
-        <!-- Daty życia pierwszej osoby -->
-        @if (grave().deceasedPersons[0]) {
-        <div class="dates">
-          @if (grave().deceasedPersons[0].birthDate) {
-          <div>
-            <mat-icon>cake</mat-icon>
-            <span>{{ grave().deceasedPersons[0].birthDate | dateFormat }}</span>
-          </div>
-          } @if (grave().deceasedPersons[0].deathDate) {
-          <div>
-            <mat-icon>event_busy</mat-icon>
-            <span>{{ grave().deceasedPersons[0].deathDate | dateFormat }}</span>
-          </div>
+          <p class="location">
+            <i class="pi pi-map-marker"></i>
+            <span>{{ grave().cemeteryName }}</span>
+          </p>
+
+          @if (grave().sector || grave().graveNumber) {
+          <p class="place">
+            @if (grave().sector) { sektor {{ grave().sector }} } @if (grave().graveNumber) {
+            {{ grave().sector ? '· ' : '' }}miejsce {{ grave().graveNumber }} }
+          </p>
+          } @if (yearsLine()) {
+          <p class="years">{{ yearsLine() }}</p>
           }
         </div>
-        }
+      </div>
 
-        <!-- Przypomnienie o płatności -->
-        @if (isPaymentDueSoon()) {
-        <div class="payment-warning">
-          <mat-icon color="warn">warning</mat-icon>
-          <span>Opłata wygasa {{ grave().paymentDueDate | dateFormat : 'short' }}</span>
-        </div>
-        }
-
-        <!-- Ostatnia wizyta -->
-        @if (grave().lastVisited) {
-        <div class="last-visited">
-          <mat-icon>schedule</mat-icon>
-          <span>Ostatnio odwiedzony {{ grave().lastVisited | dateFormat : 'relative' }}</span>
-        </div>
-        }
-      </mat-card-content>
-
-      <mat-card-actions>
-        <button mat-button [routerLink]="['/graves', grave().id]" color="primary">
-          <mat-icon>info</mat-icon>
-          Szczegóły
-        </button>
+      @if (grave().distance !== undefined || grave().lastVisited) {
+      <div class="pills">
         @if (grave().distance !== undefined) {
-        <button mat-button (click)="onNavigate()">
-          <mat-icon>directions</mat-icon>
-          Nawiguj
-        </button>
+        <span class="pill">
+          <i class="pi pi-compass"></i>
+          {{ grave().distance | distance }}
+        </span>
+        } @if (grave().lastVisited) {
+        <span class="pill">
+          <i class="pi pi-calendar"></i>
+          {{ grave().lastVisited | dateFormat }}
+        </span>
         }
-      </mat-card-actions>
-    </mat-card>
+      </div>
+      } @if (paymentWarning()) {
+      <div class="payment-warning">
+        <i class="pi pi-exclamation-triangle"></i>
+        <span>{{ paymentWarning() }}</span>
+      </div>
+      }
+
+      <footer>
+        <p-button
+          label="Szczegóły"
+          icon="pi pi-info-circle"
+          [outlined]="true"
+          styleClass="w-full"
+          [routerLink]="['/graves', grave().id]"
+        />
+        @if (grave().distance !== undefined) {
+        <p-button label="Nawiguj" icon="pi pi-directions" styleClass="w-full" (onClick)="onNavigate()" />
+        }
+      </footer>
+    </article>
   `,
   styles: [
     `
+      :host {
+        display: block;
+      }
+
       .grave-card {
-        transition: transform 0.2s, box-shadow 0.2s;
-        cursor: pointer;
+        background: var(--surface);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius-lg);
+        padding: 16px;
+        box-shadow: var(--shadow-card);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        height: 100%;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
 
         &:hover {
           transform: translateY(-2px);
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+          box-shadow: var(--shadow-float);
         }
       }
 
-      mat-card-header {
-        margin-bottom: 16px;
-      }
-
-      .header-content {
+      .card-main {
         display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        width: 100%;
-        margin-bottom: 12px;
+        gap: 14px;
       }
 
-      .grave-info {
-        flex: 1;
-      }
-
-      .no-name {
-        color: var(--mdc-theme-text-secondary-on-background, rgba(0, 0, 0, 0.6));
-        font-style: italic;
-      }
-
-      .distance-badge {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 8px;
-        background: rgba(46, 125, 50, 0.1);
-        border-radius: 12px;
-        color: #2e7d32;
-        font-size: 14px;
-        font-weight: 500;
-
-        mat-icon {
-          font-size: 18px;
-          width: 18px;
-          height: 18px;
-        }
-      }
-
-      .grave-image {
-        width: 100%;
-        height: 200px;
+      .thumb {
+        width: 88px;
+        height: 88px;
+        flex-shrink: 0;
+        border-radius: var(--radius-md);
         background-size: cover;
         background-position: center;
-        border-radius: 8px;
-        margin-bottom: 16px;
+        background-color: var(--paper-2);
 
         &.placeholder {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #f5f5f5;
 
-          mat-icon {
-            font-size: 64px;
-            width: 64px;
-            height: 64px;
-            color: rgba(0, 0, 0, 0.2);
+          i {
+            font-size: 32px;
+            color: var(--sage-soft);
           }
         }
       }
 
-      mat-card-content {
-        padding-top: 0;
+      .info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
       }
 
-      .deceased-list {
-        margin-bottom: 12px;
+      .name {
+        margin: 0;
+        font-family: var(--font-serif);
+        font-size: 19px;
+        font-weight: 600;
+        color: var(--ink);
+        line-height: 1.2;
+
+        .more {
+          color: var(--ink-muted);
+          font-size: 15px;
+        }
       }
 
-      .deceased-chips {
+      .no-name {
+        color: var(--ink-faint);
+        font-style: italic;
+      }
+
+      .location {
+        margin: 2px 0 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13.5px;
+        color: var(--ink-muted);
+
+        i {
+          font-size: 12px;
+          color: var(--sage);
+        }
+      }
+
+      .place {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--ink-faint);
+      }
+
+      .years {
+        margin: 3px 0 0;
+        font-family: var(--font-serif);
+        font-size: 13px;
+        color: var(--ink-muted);
+      }
+
+      .pills {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
       }
 
-      .dates {
-        display: flex;
+      .pill {
+        display: inline-flex;
         align-items: center;
-        gap: 16px;
-        color: rgba(0, 0, 0, 0.6);
-        font-size: 14px;
-        margin-bottom: 8px;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: var(--radius-pill);
+        background: var(--beige);
+        color: var(--ink);
+        font-size: 12.5px;
+        font-weight: 600;
 
-        mat-icon {
-          font-size: 18px;
-          width: 18px;
-          height: 18px;
-          margin-right: 4px;
-        }
-
-        > * {
-          display: flex;
-          align-items: center;
+        i {
+          font-size: 12px;
+          color: var(--sage);
         }
       }
 
@@ -242,133 +218,31 @@ import { DateFormatPipe } from '../../../../shared/pipes/date-format.pipe';
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 8px 12px;
-        background: #fff3e0;
-        border-radius: 4px;
-        color: #e65100;
-        font-size: 14px;
-        margin-bottom: 8px;
+        padding: 10px 12px;
+        background: var(--copper-tint);
+        border-radius: var(--radius-sm);
+        color: var(--copper-ink);
+        font-size: 12.5px;
+        font-weight: 500;
 
-        mat-icon {
-          font-size: 20px;
-          width: 20px;
-          height: 20px;
+        i {
+          font-size: 14px;
+          flex-shrink: 0;
         }
       }
 
-      .last-visited {
+      footer {
+        margin-top: auto;
         display: flex;
-        align-items: center;
-        gap: 8px;
-        color: rgba(0, 0, 0, 0.6);
-        font-size: 13px;
+        gap: 10px;
 
-        mat-icon {
-          font-size: 16px;
-          width: 16px;
-          height: 16px;
-        }
-      }
-
-      mat-card-actions {
-        display: flex;
-        justify-content: space-between;
-        padding: 8px 16px;
-
-        button {
-          mat-icon {
-            margin-right: 4px;
-          }
+        :host ::ng-deep .w-full,
+        :host ::ng-deep .w-full .p-button {
+          width: 100%;
         }
 
-        .more-button {
-          margin-left: auto;
-        }
-      }
-
-      @media (max-width: 599px) {
-        .grave-card {
-          margin: 0;
-        }
-
-        mat-card-header {
-          margin-bottom: 12px;
-        }
-
-        .header-content {
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .distance-badge {
-          align-self: flex-start;
-          font-size: 13px;
-          padding: 4px 10px;
-
-          mat-icon {
-            font-size: 16px;
-            width: 16px;
-            height: 16px;
-          }
-        }
-
-        .grave-image {
-          height: 140px;
-          margin-bottom: 12px;
-
-          &.placeholder mat-icon {
-            font-size: 48px;
-            width: 48px;
-            height: 48px;
-          }
-        }
-
-        mat-card-title {
-          font-size: 18px;
-          line-height: 1.3;
-        }
-
-        mat-card-subtitle {
-          font-size: 13px;
-        }
-
-        .dates {
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 6px;
-          font-size: 13px;
-        }
-
-        .payment-warning {
-          font-size: 13px;
-          padding: 6px 10px;
-
-          mat-icon {
-            font-size: 18px;
-            width: 18px;
-            height: 18px;
-          }
-        }
-
-        .last-visited {
-          font-size: 12px;
-        }
-
-        mat-card-actions {
-          padding: 6px 12px;
-          flex-wrap: wrap;
-          gap: 4px;
-
-          button {
-            font-size: 13px;
-            padding: 0 12px;
-
-            mat-icon {
-              font-size: 18px;
-              width: 18px;
-              height: 18px;
-            }
-          }
+        p-button {
+          flex: 1;
         }
       }
     `,
@@ -379,20 +253,37 @@ export class GraveCardComponent {
   navigate = output<string>();
 
   primaryPhoto = computed(() => {
-    const graveData = this.grave();
-    const primary = graveData.photos.find((p) => p.isPrimary);
-    return primary?.thumbnailUrl || primary?.url || graveData.photos[0]?.url;
+    const g = this.grave();
+    const primary = g.photos.find((p) => p.isPrimary);
+    return primary?.thumbnailUrl || primary?.url || g.photos[0]?.url;
   });
 
-  isPaymentDueSoon = computed(() => {
-    const graveData = this.grave();
-    if (!graveData.paymentDueDate) return false;
+  yearsLine = computed(() => {
+    const persons = this.grave().deceasedPersons.slice(0, 2);
+    const ranges = persons
+      .map((p) => {
+        const birth = p.birthDate ? new Date(p.birthDate).getFullYear() : null;
+        const death = p.deathDate ? new Date(p.deathDate).getFullYear() : null;
+        if (birth && death) return `${birth}–${death}`;
+        if (death) return `†${death}`;
+        if (birth) return `${birth}`;
+        return null;
+      })
+      .filter((r): r is string => r !== null);
+    return ranges.join(' · ');
+  });
 
-    const dueDate = new Date(graveData.paymentDueDate);
-    const oneMonthFromNow = new Date();
-    oneMonthFromNow.setMonth(oneMonthFromNow.getMonth() + 1);
-
-    return dueDate <= oneMonthFromNow && dueDate >= new Date();
+  paymentWarning = computed(() => {
+    const g = this.grave();
+    if (!g.paymentDueDate) return null;
+    const due = new Date(g.paymentDueDate);
+    const now = new Date();
+    const oneMonth = new Date();
+    oneMonth.setMonth(oneMonth.getMonth() + 2);
+    if (due < now || due > oneMonth) return null;
+    const days = Math.max(0, Math.round((due.getTime() - now.getTime()) / 86_400_000));
+    const dueStr = due.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+    return `Opłata kończy się za ${days} dni — do ${dueStr}`;
   });
 
   onNavigate(): void {
