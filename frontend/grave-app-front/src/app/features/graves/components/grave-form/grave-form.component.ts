@@ -23,6 +23,13 @@ import { MessageModule } from 'primeng/message';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { Grave, CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
+import { parseGoogleMapsLocation } from '../../../../shared/utils/google-maps-location';
+
+interface GmapsMessage {
+  type: 'success' | 'info' | 'error';
+  icon: string;
+  text: string;
+}
 
 @Component({
   selector: 'app-grave-form',
@@ -63,6 +70,10 @@ export class GraveFormComponent implements OnInit {
   submitting = signal(false);
   currentStep = signal(0);
   showPaymentInfo = signal(false);
+
+  // Import pinezki z Google Maps
+  gmapsMessage = signal<GmapsMessage | null>(null);
+  gmapsExpandUrl = signal<string | null>(null);
 
   editMode = computed(() => !!this.grave());
 
@@ -181,6 +192,57 @@ export class GraveFormComponent implements OnInit {
         paymentPeriodMonths: null,
       });
     }
+  }
+
+  /**
+   * Wyłuskuje współrzędne z wklejonego linku/tekstu Google Maps i wypełnia krok
+   * lokalizacji. Wszystko po stronie przeglądarki — bez backendu.
+   */
+  applyGmapsLink(raw: string): void {
+    const result = parseGoogleMapsLocation(raw);
+    this.gmapsExpandUrl.set(null);
+
+    switch (result.kind) {
+      case 'coords': {
+        this.locationGroup.patchValue({
+          latitude: result.lat,
+          longitude: result.lng,
+          accuracy: null,
+        });
+        this.locationGroup.markAsDirty();
+        const coordsText = `${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}`;
+        this.gmapsMessage.set({
+          type: 'success',
+          icon: 'pi-check-circle',
+          text:
+            result.source === 'viewport'
+              ? `Ustawiono współrzędne: ${coordsText}. Uwaga: to środek widoku mapy, nie sama pinezka — sprawdź dokładność.`
+              : `Ustawiono współrzędne: ${coordsText}`,
+        });
+        break;
+      }
+      case 'needs-expand': {
+        this.gmapsExpandUrl.set(result.url);
+        this.gmapsMessage.set({
+          type: 'info',
+          icon: 'pi-info-circle',
+          text: 'To skrócony link. Otwórz go w Google Maps, skopiuj pełny adres z paska i wklej ponownie.',
+        });
+        break;
+      }
+      default: {
+        this.gmapsMessage.set({
+          type: 'error',
+          icon: 'pi-exclamation-triangle',
+          text: 'Nie rozpoznano współrzędnych. Wklej link do pinezki, pełny adres Google Maps lub współrzędne (np. 49.6126, 21.6488).',
+        });
+      }
+    }
+  }
+
+  openGmapsLink(): void {
+    const url = this.gmapsExpandUrl();
+    if (url) window.open(url, '_blank', 'noopener');
   }
 
   async useCurrentLocation(): Promise<void> {

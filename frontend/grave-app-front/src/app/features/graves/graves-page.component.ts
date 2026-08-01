@@ -77,7 +77,7 @@ interface SortOptionItem {
               <button
                 type="button"
                 class="chip"
-                [class.active]="sortBy === opt.value"
+                [class.active]="sortBy() === opt.value"
                 [disabled]="opt.disabled"
                 (click)="selectSort(opt.value)"
               >
@@ -360,7 +360,7 @@ export class GravesPageComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   searchQuery = '';
-  sortBy: SortOption = 'name';
+  sortBy = signal<SortOption>('name');
 
   userLocation = signal<{ lat: number; lng: number } | null>(null);
 
@@ -387,15 +387,16 @@ export class GravesPageComponent {
   });
 
   displayedGraves = computed(() => {
-    let graves: GraveWithDistance[] = this.graveService.filteredGraves();
+    const filtered = this.graveService.filteredGraves();
     const loc = this.userLocation();
 
-    if (loc) {
-      // attach distance for the card badge and for distance sorting
-      graves = this.graveService.getGravesWithDistance(loc.lat, loc.lng);
-    }
+    // attach distance (for the card badge and distance sorting) to the
+    // already-filtered list so search stays respected when GPS is on
+    const graves: GraveWithDistance[] = loc
+      ? this.graveService.getGravesWithDistance(loc.lat, loc.lng, filtered)
+      : filtered;
 
-    return this.graveService.sortGraves(graves, this.sortBy);
+    return this.graveService.sortGraves(graves, this.sortBy());
   });
 
   constructor() {
@@ -420,7 +421,7 @@ export class GravesPageComponent {
   }
 
   selectSort(sortBy: SortOption): void {
-    this.sortBy = sortBy;
+    this.sortBy.set(sortBy);
     this.graveService.setSortBy(sortBy);
   }
 

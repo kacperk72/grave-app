@@ -26,8 +26,49 @@
   <section class="step" [@fadeIn]>
     <header class="step__header">
       <h3>Lokalizacja grobu</h3>
-      <p>Wprowadź współrzędne GPS lub użyj aktualnej lokalizacji</p>
+      <p>Wklej pinezkę z Google Maps, użyj aktualnej lokalizacji lub wpisz współrzędne ręcznie</p>
     </header>
+
+    <div class="gmaps-import">
+      <label for="gmapsLink">Pinezka Google Maps</label>
+      <div class="gmaps-import__row">
+        <input
+          id="gmapsLink"
+          pInputText
+          #gmapsRef
+          type="text"
+          placeholder="Wklej link do pinezki lub współrzędne (49.6126, 21.6488)"
+          (keyup.enter)="applyGmapsLink(gmapsRef.value)"
+        />
+        <p-button
+          type="button"
+          icon="pi pi-arrow-down"
+          label="Wypełnij"
+          (onClick)="applyGmapsLink(gmapsRef.value)"
+        />
+      </div>
+
+      @if (gmapsMessage(); as msg) {
+      <div class="gmaps-msg" [class.success]="msg.type === 'success'" [class.info]="msg.type === 'info'" [class.error]="msg.type === 'error'">
+        <i class="pi {{ msg.icon }}"></i>
+        <span>{{ msg.text }}</span>
+      </div>
+      @if (gmapsExpandUrl()) {
+      <p-button
+        type="button"
+        [outlined]="true"
+        size="small"
+        icon="pi pi-external-link"
+        label="Otwórz w Google Maps"
+        (onClick)="openGmapsLink()"
+        styleClass="gmaps-open"
+      />
+      } }
+
+      <small class="hint">Działa dla pojedynczej pinezki (nie dla zapisanej listy).</small>
+    </div>
+
+    <div class="gmaps-divider"><span>lub wpisz ręcznie</span></div>
 
     <div class="grid two-col" formGroupName="location">
       <div class="field">

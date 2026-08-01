@@ -267,8 +267,12 @@ export class GraveService {
   /**
    * Oblicza odległość do grobów od aktualnej pozycji
    */
-  getGravesWithDistance(userLat: number, userLng: number): GraveWithDistance[] {
-    return this.graves().map((grave) => {
+  getGravesWithDistance(
+    userLat: number,
+    userLng: number,
+    source: Grave[] = this.graves()
+  ): GraveWithDistance[] {
+    return source.map((grave) => {
       const distance = getDistance(
         { latitude: userLat, longitude: userLng },
         { latitude: grave.latitude, longitude: grave.longitude }
