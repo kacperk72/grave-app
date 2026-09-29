@@ -7,6 +7,9 @@
 export const environment = {
   production: false,
 
+  // API rodzinnej mapy (grave-app/worker) — lokalnie `npm run dev` w worker/
+  apiUrl: 'http://localhost:8791',
+
   supabase: {
     url: 'https://scchquywdstchfjpxbhm.supabase.co',
     publishableKey: 'sb_publishable_F8XhkOP8g-A_HJskg9cH1g_cun0lacU',

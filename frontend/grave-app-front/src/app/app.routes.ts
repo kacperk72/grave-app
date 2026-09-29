@@ -14,6 +14,12 @@ export const routes: Routes = [
       import('./features/welcome/welcome-page.component').then((m) => m.WelcomePageComponent),
   },
   {
+    // Rodzinny link: /rodzina#<klucz>
+    path: 'rodzina',
+    loadComponent: () =>
+      import('./features/family/join-family-page.component').then((m) => m.JoinFamilyPageComponent),
+  },
+  {
     path: 'start',
     canActivate: [onboardingGuard],
     loadComponent: () =>

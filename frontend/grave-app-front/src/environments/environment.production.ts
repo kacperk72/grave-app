@@ -3,6 +3,9 @@
 export const environment = {
   production: true,
 
+  // API rodzinnej mapy: Cloudflare Worker grave-app-api (grave-app/worker)
+  apiUrl: 'https://grave-app-api.kacper-kubit99.workers.dev',
+
   supabase: {
     url: 'https://scchquywdstchfjpxbhm.supabase.co',
     publishableKey: 'sb_publishable_F8XhkOP8g-A_HJskg9cH1g_cun0lacU',
