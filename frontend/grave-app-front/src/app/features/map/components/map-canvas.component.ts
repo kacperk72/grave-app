@@ -11,7 +11,10 @@ import {
   viewChild,
 } from '@angular/core';
 import { LeafletModule } from '@asymmetrik/ngx-leaflet';
-import * as L from 'leaflet';
+// Import domyślny, nie `* as L`: wtyczka markercluster dopisuje markerClusterGroup
+// do prawdziwego obiektu Leaflet, a build produkcyjny przy `* as L` podaje jego
+// kopię sprzed dopisania — wtedy na produkcji nie było żadnych pinezek.
+import L from 'leaflet';
 import 'leaflet.markercluster';
 
 import { Grave } from '../../../shared/models/grave.model';
