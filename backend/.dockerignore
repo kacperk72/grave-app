@@ -1,0 +1,27 @@
+# .env NA PIERWSZYM MIEJSCU I NIEPRZYPADKOWO.
+# Zawiera SUPABASE_SERVICE_KEY — klucz omijający wszystkie reguły RLS.
+# Gdyby trafił do obrazu, siedziałby w warstwie na stałe: `docker history`
+# i rozpakowanie warstwy wyciągnęłyby go nawet po "usunięciu" w kolejnym kroku.
+# Sekrety wchodzą do kontenera dopiero w runtime, przez `env_file` w compose.yaml.
+.env
+.env.*
+*.env
+
+node_modules/
+dist/
+coverage/
+
+.git/
+.vscode/
+.idea/
+
+*.log
+npm-debug.log*
+
+test/
+**/*.spec.ts
+
+Dockerfile
+.dockerignore
+README.md
+SUPABASE_SETUP.md

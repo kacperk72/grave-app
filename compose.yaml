@@ -1,0 +1,64 @@
+# GraveMap — uruchomienie lokalne
+#
+#   docker compose up -d          → http://localhost:8082
+#   docker compose logs -f api    → logi backendu
+#   docker compose down           → stop
+#
+# Nie ma tu serwisu bazy danych i to jest celowe: GraveMap korzysta
+# z Supabase w chmurze (*.supabase.co), więc "baza" jest zewnętrzna.
+# Backend NestJS potrzebuje do niej tylko kluczy — patrz env_file niżej.
+
+name: grave-app
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    # Sekrety wjeżdżają TUTAJ, w runtime — nie przez COPY do obrazu.
+    # Ta różnica jest zasadnicza: warstwy obrazu są niezmienne i czytelne
+    # dla każdego, kto ma do obrazu dostęp (`docker history`, rozpakowanie
+    # warstwy). Klucz wgrany do obrazu zostaje w nim na zawsze, nawet jeśli
+    # w kolejnej warstwie go "usuniesz". Zmienne środowiskowe żyją tylko
+    # w uruchomionym kontenerze.
+    #
+    # backend/.env jest w .gitignore i w .dockerignore — i tak ma zostać.
+    env_file:
+      - ./backend/.env
+
+    environment:
+      # Nadpisuje to, co ewentualnie siedzi w .env — kontener zawsze
+      # nasłuchuje na 3000 wewnątrz, mapowanie na host jest niżej.
+      NODE_ENV: production
+      PORT: 3000
+
+    ports:
+      - "3000:3000" # Swagger: http://localhost:3000/api/docs
+
+    healthcheck:
+      # Globalny prefiks 'api' + wersjonowanie URI (domyślna wersja 1)
+      # składają się na ścieżkę /api/v1/health.
+      # W alpine nie ma curla, ale jest wget z busyboxa.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:3000/api/v1/health > /dev/null || exit 1",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend/grave-app-front
+      dockerfile: Dockerfile
+    ports:
+      - "8082:80" # ← aplikacja: http://localhost:8082
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

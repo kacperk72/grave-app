@@ -1,85 +1,33 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { map } from 'rxjs/operators';
 
 import { ToastModule } from 'primeng/toast';
-import { ButtonModule } from 'primeng/button';
 import { MessageService } from 'primeng/api';
 
 import { GraveFormComponent } from '../../components/grave-form/grave-form.component';
 import { GraveService } from '../../services/grave.service';
 import { CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
 
+/** Dodawanie nowego grobu (`/graves/add`) i edycja istniejącego (`/graves/:id/edit`). */
 @Component({
   selector: 'app-add-grave-page',
-  imports: [GraveFormComponent, ToastModule, ButtonModule],
+  imports: [GraveFormComponent, ToastModule],
   providers: [MessageService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="add-grave-page">
-      <header class="page-header">
-        <p-button
-          [text]="true"
-          severity="secondary"
-          icon="pi pi-arrow-left"
-          label="Wróć"
-          (onClick)="onCancel()"
-          styleClass="back-btn"
-        />
-        <div>
-          <h1>Dodaj nowy grób</h1>
-          <p>Wypełnij formularz, aby zapisać lokalizację grobu</p>
-        </div>
-      </header>
-
-      <app-grave-form (save)="onSave($event)" (cancel)="onCancel()" />
-
-      <p-toast position="top-center" />
-    </div>
+    @if (!editId()) {
+    <app-grave-form heading="Nowy grób" (save)="onSave($event)" (cancel)="onCancel()" />
+    } @else if (grave(); as g) {
+    <app-grave-form heading="Edycja grobu" [grave]="g" (save)="onSave($event)" (cancel)="onCancel()" />
+    }
+    <p-toast position="top-center" />
   `,
   styles: [
     `
       :host {
         display: block;
-      }
-
-      .add-grave-page {
-        max-width: 920px;
-        margin: 0 auto;
-      }
-
-      .page-header {
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        margin-bottom: 28px;
-
-        h1 {
-          margin: 0 0 4px;
-          font-family: var(--font-serif);
-          font-size: 28px;
-          font-weight: 600;
-          color: var(--ink);
-        }
-
-        p {
-          margin: 0;
-          color: var(--ink-muted);
-          font-size: 14px;
-        }
-      }
-
-      @media (max-width: 600px) {
-        .page-header {
-          margin-bottom: 16px;
-
-          h1 {
-            font-size: 20px;
-          }
-
-          p {
-            font-size: 13px;
-          }
-        }
       }
     `,
   ],
@@ -89,28 +37,35 @@ export class AddGravePageComponent {
   private readonly router = inject(Router);
   private readonly toast = inject(MessageService);
 
+  readonly editId = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => p.get('id'))));
+  readonly grave = computed(() => {
+    const id = this.editId();
+    return id ? this.graveService.graves().find((g) => g.id === id) : undefined;
+  });
+
   async onSave(dto: CreateGraveDto | UpdateGraveDto): Promise<void> {
+    const id = this.editId();
     try {
-      await this.graveService.addGrave(dto as CreateGraveDto);
-      this.toast.add({
-        severity: 'success',
-        summary: 'Dodano grób',
-        detail: 'Lokalizacja zapisana pomyślnie',
-        life: 2500,
-      });
-      setTimeout(() => this.router.navigate(['/graves']), 800);
+      if (id) {
+        await this.graveService.updateGrave(id, dto);
+        this.router.navigate(['/graves', id], { replaceUrl: true });
+        return;
+      }
+      const created = await this.graveService.addGrave(dto as CreateGraveDto);
+      this.router.navigate(['/graves', created.id], { replaceUrl: true });
     } catch (error) {
-      console.error('Error adding grave:', error);
+      console.error('Error saving grave:', error);
       this.toast.add({
         severity: 'error',
         summary: 'Błąd',
-        detail: 'Nie udało się dodać grobu',
+        detail: id ? 'Nie udało się zapisać zmian' : 'Nie udało się dodać grobu',
         life: 4000,
       });
     }
   }
 
   onCancel(): void {
-    this.router.navigate(['/graves']);
+    const id = this.editId();
+    this.router.navigate(id ? ['/graves', id] : ['/start']);
   }
 }

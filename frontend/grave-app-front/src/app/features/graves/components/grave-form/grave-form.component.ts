@@ -11,25 +11,23 @@ import {
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { animate, style, transition, trigger } from '@angular/animations';
 
-import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TextareaModule } from 'primeng/textarea';
 import { DatePickerModule } from 'primeng/datepicker';
-import { IconFieldModule } from 'primeng/iconfield';
-import { InputIconModule } from 'primeng/inputicon';
-import { CardModule } from 'primeng/card';
-import { MessageModule } from 'primeng/message';
-import { TooltipModule } from 'primeng/tooltip';
 
 import { Grave, CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
 import { parseGoogleMapsLocation } from '../../../../shared/utils/google-maps-location';
+import { IconComponent, IconName } from '../../../../shared/components/icon.component';
 
 interface GmapsMessage {
   type: 'success' | 'info' | 'error';
-  icon: string;
+  icon: IconName;
   text: string;
 }
+
+/** Skąd pochodzą współrzędne w kroku „Lokalizacja". */
+type LocationSource = 'gps' | 'gmaps' | 'manual';
 
 @Component({
   selector: 'app-grave-form',
@@ -37,16 +35,11 @@ interface GmapsMessage {
   styleUrls: ['./grave-form.component.scss'],
   imports: [
     ReactiveFormsModule,
-    ButtonModule,
     InputTextModule,
     InputNumberModule,
     TextareaModule,
     DatePickerModule,
-    IconFieldModule,
-    InputIconModule,
-    CardModule,
-    MessageModule,
-    TooltipModule,
+    IconComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
@@ -60,6 +53,7 @@ interface GmapsMessage {
 })
 export class GraveFormComponent implements OnInit {
   grave = input<Grave>();
+  heading = input('Nowy grób');
   save = output<CreateGraveDto | UpdateGraveDto>();
   cancel = output<void>();
 
@@ -71,6 +65,11 @@ export class GraveFormComponent implements OnInit {
   currentStep = signal(0);
   showPaymentInfo = signal(false);
 
+  source = signal<LocationSource | null>(null);
+  gpsError = signal<string | null>(null);
+  // Zmienia się przy każdej zmianie współrzędnych, żeby podgląd lokalizacji się odświeżał
+  private readonly locationTick = signal(0);
+
   // Import pinezki z Google Maps
   gmapsMessage = signal<GmapsMessage | null>(null);
   gmapsExpandUrl = signal<string | null>(null);
@@ -78,11 +77,29 @@ export class GraveFormComponent implements OnInit {
   editMode = computed(() => !!this.grave());
 
   steps = [
-    { index: 0, label: 'Lokalizacja', icon: 'pi-map-marker' },
-    { index: 1, label: 'Cmentarz', icon: 'pi-building' },
-    { index: 2, label: 'Osoby', icon: 'pi-users' },
-    { index: 3, label: 'Dodatkowe', icon: 'pi-info-circle' },
+    { index: 0, label: 'Lokalizacja' },
+    { index: 1, label: 'Cmentarz' },
+    { index: 2, label: 'Osoby' },
+    { index: 3, label: 'Dodatkowe' },
   ];
+
+  readonly nextLabel = computed(() => {
+    const next = this.steps[this.currentStep() + 1];
+    return next ? `Dalej: ${next.label.toLowerCase()}` : '';
+  });
+
+  /** Zapisane współrzędne do podglądu w kroku 1. */
+  readonly location = computed(() => {
+    this.locationTick();
+    const v = this.graveForm?.get('location')?.value;
+    if (v?.latitude == null || v?.longitude == null || v.latitude === '' || v.longitude === '') {
+      return null;
+    }
+    return {
+      coords: `${Number(v.latitude).toFixed(5)}, ${Number(v.longitude).toFixed(5)}`,
+      accuracy: v.accuracy != null ? Math.round(v.accuracy) : null,
+    };
+  });
 
   get locationGroup(): FormGroup {
     return this.graveForm.get('location') as FormGroup;
@@ -101,6 +118,8 @@ export class GraveFormComponent implements OnInit {
     if (this.grave()) {
       this.patchFormValues();
     }
+    this.locationGroup.valueChanges.subscribe(() => this.locationTick.update((n) => n + 1));
+    this.locationTick.update((n) => n + 1);
   }
 
   private initForm(): void {
@@ -213,7 +232,7 @@ export class GraveFormComponent implements OnInit {
         const coordsText = `${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}`;
         this.gmapsMessage.set({
           type: 'success',
-          icon: 'pi-check-circle',
+          icon: 'check',
           text:
             result.source === 'viewport'
               ? `Ustawiono współrzędne: ${coordsText}. Uwaga: to środek widoku mapy, nie sama pinezka — sprawdź dokładność.`
@@ -225,7 +244,7 @@ export class GraveFormComponent implements OnInit {
         this.gmapsExpandUrl.set(result.url);
         this.gmapsMessage.set({
           type: 'info',
-          icon: 'pi-info-circle',
+          icon: 'link',
           text: 'To skrócony link. Otwórz go w Google Maps, skopiuj pełny adres z paska i wklej ponownie.',
         });
         break;
@@ -233,7 +252,7 @@ export class GraveFormComponent implements OnInit {
       default: {
         this.gmapsMessage.set({
           type: 'error',
-          icon: 'pi-exclamation-triangle',
+          icon: 'alert',
           text: 'Nie rozpoznano współrzędnych. Wklej link do pinezki, pełny adres Google Maps lub współrzędne (np. 49.6126, 21.6488).',
         });
       }
@@ -245,8 +264,14 @@ export class GraveFormComponent implements OnInit {
     if (url) window.open(url, '_blank', 'noopener');
   }
 
+  selectSource(source: LocationSource): void {
+    this.source.set(source);
+    if (source === 'gps') this.useCurrentLocation();
+  }
+
   async useCurrentLocation(): Promise<void> {
     this.loadingLocation.set(true);
+    this.gpsError.set(null);
     try {
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -263,6 +288,9 @@ export class GraveFormComponent implements OnInit {
       });
     } catch (error) {
       console.error('Error getting location:', error);
+      this.gpsError.set(
+        'Nie udało się ustalić pozycji. Sprawdź, czy przeglądarka ma dostęp do lokalizacji.'
+      );
     } finally {
       this.loadingLocation.set(false);
     }

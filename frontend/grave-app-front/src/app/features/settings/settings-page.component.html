@@ -1,0 +1,100 @@
+<div class="screen">
+  <header class="head">
+    <h1>Ustawienia</h1>
+    <p>Wszystko zapisuje się na tym telefonie.</p>
+  </header>
+
+  <section class="group">
+    <h2>Twoje dane</h2>
+    <div class="card">
+      <button
+        type="button"
+        class="row"
+        [disabled]="busy() || graveService.gravesCount() === 0"
+        (click)="exportData()"
+      >
+        <span class="row__icon"><app-icon name="upload" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Eksportuj i udostępnij</span>
+          <span class="row__sub">Plik dla rodziny · {{ dataSummary() }}</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </button>
+      <button type="button" class="row" [disabled]="busy()" (click)="triggerImport('merge', fileInput)">
+        <span class="row__icon"><app-icon name="download" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Wczytaj z pliku</span>
+          <span class="row__sub">Dołącz groby z kopii bliskich</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </button>
+    </div>
+
+    <button
+      type="button"
+      class="replace-link"
+      [disabled]="busy()"
+      (click)="triggerImport('replace', fileInput)"
+    >
+      Zastąp wszystko zawartością pliku…
+    </button>
+
+    <input
+      #fileInput
+      type="file"
+      accept="application/json,.json"
+      hidden
+      (change)="onFileSelected($event)"
+    />
+
+    @if (status(); as msg) {
+    <div class="status" [class]="'status status--' + msg.type" role="status">
+      <app-icon [name]="msg.icon" [size]="18" />
+      <span>{{ msg.text }}</span>
+    </div>
+    }
+  </section>
+
+  <section class="group">
+    <h2>Bez internetu</h2>
+    <div class="card">
+      <div class="row row--static">
+        <span class="row__icon"><app-icon name="cloud" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Praca offline</span>
+          <span class="row__sub">Mapa i groby są zapisane na urządzeniu</span>
+        </span>
+        <span class="tag tag--on">Aktywna</span>
+      </div>
+      <div class="row row--static">
+        <span class="row__icon"><app-icon name="refresh" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Synchronizacja z chmurą</span>
+          <span class="row__sub">Zmiany wyślą się, gdy wróci internet</span>
+        </span>
+        <span class="tag">Wkrótce</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2 id="theme-label">Wygląd</h2>
+    <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
+      @for (opt of themeOptions; track opt.value) {
+      <button
+        type="button"
+        role="radio"
+        [class.active]="theme.preference() === opt.value"
+        [attr.aria-checked]="theme.preference() === opt.value"
+        (click)="theme.set(opt.value)"
+      >
+        {{ opt.label }}
+      </button>
+      }
+    </div>
+  </section>
+
+  @if (version()) {
+  <p class="version">GraveMap · wersja {{ version() }}</p>
+  }
+</div>

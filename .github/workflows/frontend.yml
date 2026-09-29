@@ -1,0 +1,124 @@
+# Pipeline frontendu GraveMap.
+#
+#   pull request → testy + build (sprawdzenie, czy zmiana nic nie psuje)
+#   push na main → testy + build + WYDANIE na produkcję
+#
+# Jak działa wydanie: zbudowane pliki (dist/.../browser) trafiają na osobną gałąź
+# `deploy`. Hostinger ma włączone auto-wdrażanie z tej gałęzi (hPanel → Git) i przy
+# każdym pushu kopiuje ją do public_html. Dzięki temu nie trzymamy w GitHubie
+# żadnych haseł FTP — Hostinger sam pobiera kod przez połączone konto GitHub.
+
+name: Frontend — CI i wydanie
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/grave-app-front/**'
+      - '.github/workflows/frontend.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/grave-app-front/**'
+      - '.github/workflows/frontend.yml'
+  # Ręczne wydanie z zakładki Actions (np. ponowne wdrożenie bez zmian w kodzie)
+  workflow_dispatch:
+
+# Dwa wydania naraz mogłyby nadpisać sobie gałąź `deploy` — kolejne czeka na poprzednie.
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Testy i build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/grave-app-front
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/grave-app-front/package-lock.json
+
+      # `npm ci` instaluje dokładnie wersje z package-lock.json (i odmawia, gdy lock
+      # rozjechał się z package.json) — build na CI jest taki sam jak lokalnie.
+      # --legacy-peer-deps jak w Dockerfile: @asymmetrik/ngx-leaflet 17 deklaruje
+      # zgodność tylko z Angularem 17, choć działa z 21.
+      - run: npm ci --legacy-peer-deps
+
+      - name: Testy jednostkowe
+        run: npx ng test --watch=false
+
+      - name: Build produkcyjny
+        run: npx ng build
+
+      # Numer wersji widoczny w Ustawieniach aplikacji — łatwo sprawdzić, co jest na produkcji.
+      - name: Stempel wersji
+        run: |
+          printf '{"sha":"%s","date":"%s"}\n' "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > dist/grave-app-front/browser/version.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: frontend/grave-app-front/dist/grave-app-front/browser
+          # .htaccess zaczyna się od kropki — bez tego artefakt by go pominął
+          include-hidden-files: true
+          retention-days: 7
+
+  deploy:
+    name: Wydanie na produkcję
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push na gałąź `deploy`
+    environment:
+      name: production
+      url: https://darkgrey-octopus-623910.hostingersite.com
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site
+
+      # Gałąź `deploy` zawiera wyłącznie gotowe pliki strony. Commity dokładamy
+      # zwykłym pushem (bez --force), żeby Hostinger zawsze mógł zrobić szybkie `git pull`.
+      - name: Publikacja na gałąź deploy
+        env:
+          REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          # Treść commita przez zmienną, nie wklejona w skrypt — cudzysłowy w wiadomości
+          # nie rozbiją wtedy komendy (ani nie wstrzykną własnej)
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads "$REPO_URL" deploy > /dev/null; then
+            git clone --depth 1 --branch deploy "$REPO_URL" out
+          else
+            mkdir out && git -C out init -b deploy && git -C out remote add origin "$REPO_URL"
+          fi
+
+          # Podmień całą zawartość (usuwa pliki starych chunków), zostaw tylko .git
+          find out -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a site/. out/
+
+          cd out
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Brak zmian w zbudowanych plikach — nic do wydania."
+            exit 0
+          fi
+          SUBJECT="$(printf '%s' "${COMMIT_MSG:-ręczne uruchomienie}" | head -n 1)"
+          git commit -m "Wydanie ${GITHUB_SHA::7}: ${SUBJECT}" -m "Źródło: ${SOURCE_URL}"
+          git push origin deploy
