@@ -1,8 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+
+import { GravePhoto } from '../models/grave.model';
+import { PhotoVariant } from '../../core/services/indexeddb.service';
+import { PhotoService } from '../../core/services/photo.service';
 
 /**
- * Zdjęcie grobu wypełniające rodzica (object-fit: cover). Gdy grób nie ma
- * zdjęcia, pokazuje spokojną ilustrację — jedną z trzech, dobraną stale po `seed`,
+ * Zdjęcie grobu wypełniające rodzica (object-fit: cover). Bajty wczytuje
+ * PhotoService (telefon → rodzinna mapa). Gdy grób nie ma zdjęcia albo jeszcze się
+ * wczytuje, pokazuje spokojną ilustrację — jedną z trzech, dobraną stale po `seed`,
  * żeby karty różnych grobów nie wyglądały identycznie.
  */
 @Component({
@@ -75,9 +80,31 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
   ],
 })
 export class GravePhotoComponent {
-  src = input<string | undefined>(undefined);
+  private readonly photos = inject(PhotoService);
+
+  photo = input<GravePhoto | undefined>(undefined);
+  variant = input<PhotoVariant>('thumb');
   seed = input<string>('');
   alt = input<string>('');
+
+  protected readonly src = signal<string | undefined>(undefined);
+
+  constructor() {
+    effect((onCleanup) => {
+      const photo = this.photo();
+      const variant = this.variant();
+      this.src.set(undefined);
+      if (!photo) return;
+      let active = true;
+      onCleanup(() => (active = false));
+      this.photos
+        .url(photo, variant)
+        .then((url) => {
+          if (active) this.src.set(url);
+        })
+        .catch(() => undefined);
+    });
+  }
 
   protected readonly scene = computed(() => {
     let hash = 0;

@@ -11,7 +11,7 @@ import { RouterLink } from '@angular/router';
 import { GraveService } from '../graves/services/grave.service';
 import { FamilySyncService } from '../../core/services/family-sync.service';
 import { GeolocationService } from '../../core/services/geolocation.service';
-import { GraveWithDistance, SortOption } from '../../shared/models/grave.model';
+import { GravePhoto, GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 import { IconComponent } from '../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../shared/components/grave-photo.component';
 import {
@@ -19,7 +19,7 @@ import {
   formatDistance,
   graveTitle,
   paymentStatus,
-  primaryPhotoUrl,
+  primaryPhoto,
   yearsRange,
 } from '../../shared/utils/grave-display';
 
@@ -29,7 +29,7 @@ interface CardVm {
   id: string;
   title: string;
   meta: string;
-  photo?: string;
+  photo?: GravePhoto;
   distance: string;
 }
 
@@ -147,7 +147,7 @@ export class HomePageComponent {
       meta: [g.deceasedPersons[0] ? yearsRange(g.deceasedPersons[0]) : '', g.cemeteryName]
         .filter(Boolean)
         .join(' · '),
-      photo: primaryPhotoUrl(g),
+      photo: primaryPhoto(g),
       distance: formatDistance(g.distance),
     }))
   );

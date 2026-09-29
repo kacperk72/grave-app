@@ -17,6 +17,24 @@ export interface OutboxEntry {
   queuedAt: number;
 }
 
+export type PhotoVariant = 'full' | 'thumb';
+
+/** Bajty zdjęcia trzymane w telefonie — dzięki temu zdjęcia działają bez zasięgu. */
+export interface PhotoBlobEntry {
+  key: string; // `${photoId}:${variant}`
+  blob: Blob;
+  cachedAt: number;
+}
+
+/** Kolejka wysyłki/usunięcia bajtów zdjęć na rodzinną mapę. */
+export interface PhotoOutboxEntry {
+  key: string; // `${photoId}:${variant}` albo `${photoId}:delete`
+  photoId: string;
+  variant: PhotoVariant | null;
+  op: 'put' | 'delete';
+  queuedAt: number;
+}
+
 /** Zmiana pobrana z serwera (rodzinnej mapy). */
 export interface RemoteChange {
   id: string;
@@ -30,6 +48,8 @@ export interface RemoteChange {
 export class IndexedDbService extends Dexie {
   graves!: Table<LocalGrave, string>;
   outbox!: Table<OutboxEntry, string>;
+  photoBlobs!: Table<PhotoBlobEntry, string>;
+  photoOutbox!: Table<PhotoOutboxEntry, string>;
 
   /** Rośnie przy każdej lokalnej zmianie — sygnał dla synchronizacji. */
   readonly localChanges = signal(0);
@@ -45,6 +65,13 @@ export class IndexedDbService extends Dexie {
     this.version(2).stores({
       graves: 'id, cemeteryName, syncStatus, createdAt, [latitude+longitude]',
       outbox: 'id, queuedAt',
+    });
+    // v3: zdjęcia (bajty w telefonie) i ich kolejka wysyłki
+    this.version(3).stores({
+      graves: 'id, cemeteryName, syncStatus, createdAt, [latitude+longitude]',
+      outbox: 'id, queuedAt',
+      photoBlobs: 'key',
+      photoOutbox: 'key, queuedAt',
     });
   }
 
@@ -206,6 +233,73 @@ export class IndexedDbService extends Dexie {
       }
     });
     return touched;
+  }
+
+  // --- Zdjęcia ------------------------------------------------------------
+
+  async getPhotoBlob(photoId: string, variant: PhotoVariant): Promise<Blob | undefined> {
+    return (await this.photoBlobs.get(`${photoId}:${variant}`))?.blob;
+  }
+
+  /** Zapisuje bajty zdjęcia; `upload` = także wstaw do kolejki wysyłki na rodzinną mapę. */
+  async putPhotoBlob(photoId: string, variant: PhotoVariant, blob: Blob, upload: boolean): Promise<void> {
+    const key = `${photoId}:${variant}`;
+    await this.transaction('rw', this.photoBlobs, this.photoOutbox, async () => {
+      await this.photoBlobs.put({ key, blob, cachedAt: Date.now() });
+      if (upload) {
+        await this.photoOutbox.put({ key, photoId, variant, op: 'put', queuedAt: Date.now() + Math.random() });
+      }
+    });
+    if (upload) this.notifyChange();
+  }
+
+  /** Usuwa bajty zdjęcia z telefonu i zleca usunięcie z rodzinnej mapy. */
+  async deletePhoto(photoId: string): Promise<void> {
+    await this.transaction('rw', this.photoBlobs, this.photoOutbox, async () => {
+      await this.photoBlobs.bulkDelete([`${photoId}:full`, `${photoId}:thumb`]);
+      await this.photoOutbox.bulkDelete([`${photoId}:full`, `${photoId}:thumb`]);
+      await this.photoOutbox.put({
+        key: `${photoId}:delete`,
+        photoId,
+        variant: null,
+        op: 'delete',
+        queuedAt: Date.now() + Math.random(),
+      });
+    });
+    this.notifyChange();
+  }
+
+  async getPhotoOutbox(limit: number): Promise<PhotoOutboxEntry[]> {
+    return this.photoOutbox.orderBy('queuedAt').limit(limit).toArray();
+  }
+
+  async photoOutboxCount(): Promise<number> {
+    return this.photoOutbox.count();
+  }
+
+  async removeFromPhotoOutbox(sent: PhotoOutboxEntry[]): Promise<void> {
+    await this.transaction('rw', this.photoOutbox, async () => {
+      for (const entry of sent) {
+        const current = await this.photoOutbox.get(entry.key);
+        if (current && current.queuedAt === entry.queuedAt) await this.photoOutbox.delete(entry.key);
+      }
+    });
+  }
+
+  /** Wszystkie zdjęcia z telefonu do wysłania — przy tworzeniu mapy i dołączaniu. */
+  async queueAllPhotoUploads(): Promise<void> {
+    await this.transaction('rw', this.photoBlobs, this.photoOutbox, async () => {
+      const keys = (await this.photoBlobs.toCollection().primaryKeys()) as string[];
+      for (const key of keys) {
+        const [photoId, variant] = key.split(':') as [string, PhotoVariant];
+        await this.photoOutbox.put({ key, photoId, variant, op: 'put', queuedAt: Date.now() + Math.random() });
+      }
+    });
+    this.notifyChange();
+  }
+
+  async clearPhotoOutbox(): Promise<void> {
+    await this.photoOutbox.clear();
   }
 
   private async queue(id: string, op: OutboxEntry['op']): Promise<void> {

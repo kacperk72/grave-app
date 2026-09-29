@@ -16,6 +16,8 @@ import { GraveService } from '../../services/grave.service';
 import { GeolocationService } from '../../../../core/services/geolocation.service';
 import { IconComponent } from '../../../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../../../shared/components/grave-photo.component';
+import { GravePhoto } from '../../../../shared/models/grave.model';
+import { PhotoService } from '../../../../core/services/photo.service';
 import {
   dueLabel,
   formatDate,
@@ -40,6 +42,7 @@ export class GraveDetailsPageComponent {
   private readonly geolocation = inject(GeolocationService);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
+  private readonly photoService = inject(PhotoService);
 
   private readonly id = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => p.get('id'))));
 
@@ -47,7 +50,10 @@ export class GraveDetailsPageComponent {
   readonly notFound = computed(() => !this.grave() && !this.graveService.isLoading());
 
   readonly userLocation = signal<{ lat: number; lng: number } | null>(null);
-  readonly photoIndex = signal(0);
+  /** null = zdjęcie główne; po kliknięciu miniatury — wybrane. */
+  readonly photoIndex = signal<number | null>(null);
+  readonly photoBusy = signal(false);
+  readonly photoError = signal<string | null>(null);
   readonly visitSaved = signal(false);
   readonly busy = signal(false);
 
@@ -74,10 +80,10 @@ export class GraveDetailsPageComponent {
   });
 
   readonly photos = computed(() => this.grave()?.photos ?? []);
-  readonly activePhoto = computed(() => {
+  readonly activePhoto = computed<GravePhoto | undefined>(() => {
     const photos = this.photos();
-    const photo = photos[this.photoIndex()] ?? photos.find((p) => p.isPrimary) ?? photos[0];
-    return photo?.url;
+    const index = this.photoIndex();
+    return (index !== null ? photos[index] : undefined) ?? photos.find((p) => p.isPrimary) ?? photos[0];
   });
 
   readonly distance = computed(() => {
@@ -143,6 +149,38 @@ export class GraveDetailsPageComponent {
       this.visitSaved.set(true);
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  async onPhotoSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    const g = this.grave();
+    if (!file || !g) return;
+    this.photoBusy.set(true);
+    this.photoError.set(null);
+    try {
+      await this.photoService.addPhoto(g.id, file);
+      this.photoIndex.set(this.photos().length - 1);
+    } catch {
+      this.photoError.set('Nie udało się dodać zdjęcia. Spróbuj innego pliku.');
+    } finally {
+      this.photoBusy.set(false);
+    }
+  }
+
+  async removeActivePhoto(): Promise<void> {
+    const g = this.grave();
+    const photo = this.activePhoto();
+    if (!g || !photo) return;
+    if (!confirm('Usunąć to zdjęcie? Zniknie też u rodziny.')) return;
+    this.photoBusy.set(true);
+    try {
+      await this.photoService.removePhoto(g.id, photo.id);
+      this.photoIndex.set(null);
+    } finally {
+      this.photoBusy.set(false);
     }
   }
 

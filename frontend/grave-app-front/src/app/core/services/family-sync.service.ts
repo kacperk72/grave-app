@@ -1,7 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 
 import { environment } from '../../../environments/environment';
-import { IndexedDbService, RemoteChange } from './indexeddb.service';
+import { IndexedDbService, PhotoVariant, RemoteChange } from './indexeddb.service';
 import { GraveService } from '../../features/graves/services/grave.service';
 
 export type SyncState = 'off' | 'idle' | 'syncing' | 'offline' | 'error' | 'revoked';
@@ -11,6 +11,7 @@ const REV_KEY = 'gravemap-family-rev';
 const SYNCED_AT_KEY = 'gravemap-family-synced-at';
 
 const PUSH_BATCH = 100;
+const PHOTO_BATCH = 10;
 const LOCAL_CHANGE_DELAY_MS = 1500;
 const PERIODIC_SYNC_MS = 60_000;
 
@@ -84,6 +85,7 @@ export class FamilySyncService {
     const res = await this.request<{ token: string }>('POST', '/spaces', undefined, null);
     this.connect(res.token);
     await this.db.queueAllGraves();
+    await this.db.queueAllPhotoUploads();
     await this.sync();
   }
 
@@ -96,9 +98,11 @@ export class FamilySyncService {
   async join(token: string): Promise<void> {
     if (this.token() !== token) {
       await this.db.clearOutbox();
+      await this.db.clearPhotoOutbox();
       this.connect(token);
     }
     await this.db.queueAllGraves();
+    await this.db.queueAllPhotoUploads();
     await this.sync();
   }
 
@@ -119,6 +123,7 @@ export class FamilySyncService {
     removeStorage(REV_KEY);
     removeStorage(SYNCED_AT_KEY);
     await this.db.clearOutbox();
+    await this.db.clearPhotoOutbox();
     this.state.set('off');
     this.errorMessage.set(null);
     await this.refreshPending();
@@ -174,9 +179,13 @@ export class FamilySyncService {
     }
     this.state.set('syncing');
     try {
+      // Najpierw bajty zdjęć: gdy inny telefon zobaczy grób z nowym zdjęciem,
+      // samo zdjęcie musi już być na serwerze.
+      await this.pushPhotos();
       await this.push();
       const changed = await this.pull();
       if (changed) await this.graveService.loadGraves();
+      await this.prefetchPhotos();
       const now = Date.now();
       this.lastSyncAt.set(now);
       writeStorage(SYNCED_AT_KEY, String(now));
@@ -195,6 +204,54 @@ export class FamilySyncService {
       }
     } finally {
       await this.refreshPending();
+    }
+  }
+
+  /** Pobiera bajty zdjęcia z rodzinnej mapy; null, gdy telefon nie jest podłączony albo zdjęcia nie ma. */
+  async fetchPhoto(photoId: string, variant: PhotoVariant): Promise<Blob | null> {
+    if (!this.token() || !navigator.onLine) return null;
+    const res = await fetch(`${this.api}/photos/${encodeURIComponent(photoId)}?variant=${variant}`, {
+      headers: { Authorization: `Bearer ${this.token()}` },
+    });
+    if (!res.ok) return null;
+    return res.blob();
+  }
+
+  private async pushPhotos(): Promise<void> {
+    for (;;) {
+      const batch = await this.db.getPhotoOutbox(PHOTO_BATCH);
+      if (batch.length === 0) return;
+      for (const entry of batch) {
+        const path = `/photos/${encodeURIComponent(entry.photoId)}`;
+        if (entry.op === 'delete') {
+          await this.send('DELETE', path);
+          continue;
+        }
+        const blob = entry.variant ? await this.db.getPhotoBlob(entry.photoId, entry.variant) : undefined;
+        if (blob) await this.send('PUT', `${path}?variant=${entry.variant}`, blob);
+      }
+      await this.db.removeFromPhotoOutbox(batch);
+    }
+  }
+
+  /**
+   * Ściąga do telefonu zdjęcia grobów, których jeszcze nie ma — żeby były
+   * widoczne na cmentarzu bez zasięgu. Błąd pojedynczego zdjęcia nie psuje synchronizacji.
+   */
+  private async prefetchPhotos(): Promise<void> {
+    for (const grave of this.graveService.graves()) {
+      for (const photo of grave.photos) {
+        if (/^(https?:|data:)/.test(photo.url)) continue;
+        for (const variant of ['thumb', 'full'] as const) {
+          if (await this.db.getPhotoBlob(photo.id, variant)) continue;
+          try {
+            const blob = await this.fetchPhoto(photo.id, variant);
+            if (blob) await this.db.putPhotoBlob(photo.id, variant, blob, false);
+          } catch {
+            // spróbujemy przy następnej synchronizacji
+          }
+        }
+      }
     }
   }
 
@@ -242,7 +299,9 @@ export class FamilySyncService {
 
   private async refreshPending(): Promise<void> {
     try {
-      this.pending.set(this.token() ? await this.db.outboxCount() : 0);
+      this.pending.set(
+        this.token() ? (await this.db.outboxCount()) + (await this.db.photoOutboxCount()) : 0
+      );
     } catch {
       this.pending.set(0);
     }
@@ -268,6 +327,17 @@ export class FamilySyncService {
       throw new ApiError(res.status, (payload as { error?: string }).error ?? 'Błąd serwera');
     }
     return payload as T;
+  }
+
+  /** Zapytanie z surowym ciałem (bajty zdjęcia) albo bez ciała. */
+  private async send(method: 'PUT' | 'DELETE', path: string, body?: Blob): Promise<void> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${this.token()}` };
+    if (body) headers['Content-Type'] = body.type || 'image/jpeg';
+    const res = await fetch(this.api + path, { method, headers, body });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, (payload as { error?: string }).error ?? 'Błąd serwera');
+    }
   }
 }
 

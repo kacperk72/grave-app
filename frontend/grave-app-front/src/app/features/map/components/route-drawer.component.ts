@@ -12,7 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { DrawerModule } from 'primeng/drawer';
 import { SliderModule } from 'primeng/slider';
 
-import { Grave } from '../../../shared/models/grave.model';
+import { Grave, GravePhoto } from '../../../shared/models/grave.model';
 import { RoutePlannerService } from '../services/route-planner.service';
 import { IconComponent } from '../../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../../shared/components/grave-photo.component';
@@ -20,7 +20,7 @@ import {
   graveTitle,
   placeLine,
   pluralPl,
-  primaryPhotoUrl,
+  primaryPhoto,
 } from '../../../shared/utils/grave-display';
 
 @Component({
@@ -96,7 +96,7 @@ import {
           @for (grave of planner.route(); track grave.id; let i = $index) {
           <li class="stop">
             <div class="stop__thumb">
-              <app-grave-photo [src]="photoOf(grave)" [seed]="grave.id" />
+              <app-grave-photo [photo]="photoOf(grave)" [seed]="grave.id" />
               <span class="stop__num">{{ i + 1 }}</span>
             </div>
             <div class="stop__text">
@@ -156,8 +156,8 @@ export class RouteDrawerComponent {
     return [grave.cemeteryName, placeLine(grave)].filter(Boolean).join(' · ');
   }
 
-  photoOf(grave: Grave): string | undefined {
-    return primaryPhotoUrl(grave);
+  photoOf(grave: Grave): GravePhoto | undefined {
+    return primaryPhoto(grave);
   }
 
   onRadiusChange(value: number): void {
