@@ -1,8 +1,84 @@
 <div class="screen">
   <header class="head">
     <h1>Ustawienia</h1>
-    <p>Wszystko zapisuje się na tym telefonie.</p>
+    <p>
+      {{ family.connected() ? 'Groby są wspólne dla całej rodziny.' : 'Wszystko zapisuje się na tym telefonie.' }}
+    </p>
   </header>
+
+  <section class="group">
+    <h2>Rodzinna mapa</h2>
+    @if (!family.connected()) {
+    <div class="card family">
+      <div class="row row--static">
+        <span class="row__icon row__icon--dark"><app-icon name="users" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Wspólne groby dla całej rodziny</span>
+          <span class="row__sub">
+            Każdy, kto dostanie link, widzi te same groby i może je uzupełniać. Zmiany docierają do
+            wszystkich.
+          </span>
+        </span>
+      </div>
+      <button type="button" class="cta family__cta" [disabled]="familyBusy()" (click)="createFamily()">
+        {{ familyBusy() ? 'Tworzę mapę…' : 'Utwórz rodzinną mapę' }}
+        <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
+      </button>
+    </div>
+    <p class="aside">Dostałeś link od rodziny? Otwórz go na tym telefonie.</p>
+    } @else {
+    <div class="card">
+      <div class="row row--static">
+        <span class="row__icon row__icon--dark"><app-icon name="users" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Rodzinna mapa</span>
+          <span
+            class="row__sub"
+            [class.row__sub--error]="family.state() === 'error' || family.state() === 'revoked'"
+          >
+            {{ familyStatus() }}
+          </span>
+        </span>
+        <span [class]="'sync-dot sync-dot--' + family.state()" aria-hidden="true"></span>
+      </div>
+      <button type="button" class="row" [disabled]="familyBusy()" (click)="shareFamily()">
+        <span class="row__icon"><app-icon name="share" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Wyślij link rodzinie</span>
+          <span class="row__sub">WhatsApp, SMS, e-mail albo schowek</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </button>
+      <button type="button" class="row" [disabled]="family.state() === 'syncing'" (click)="family.sync()">
+        <span class="row__icon"><app-icon name="refresh" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Synchronizuj teraz</span>
+          <span class="row__sub">Dzieje się też samo, co minutę i po każdej zmianie</span>
+        </span>
+      </button>
+      <button type="button" class="row" [disabled]="familyBusy()" (click)="rotateFamilyLink()">
+        <span class="row__icon"><app-icon name="key" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Zmień link</span>
+          <span class="row__sub">Stary przestanie działać — odbiera dostęp</span>
+        </span>
+      </button>
+      <button type="button" class="row" (click)="leaveFamily()">
+        <span class="row__icon"><app-icon name="logout" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Odłącz ten telefon</span>
+          <span class="row__sub">Groby zostaną na nim jako kopia</span>
+        </span>
+      </button>
+    </div>
+    }
+    @if (familyNote(); as msg) {
+    <div [class]="'status status--' + msg.type" role="status">
+      <app-icon [name]="msg.icon" [size]="18" />
+      <span>{{ msg.text }}</span>
+    </div>
+    }
+  </section>
 
   <section class="group">
     <h2>Twoje dane</h2>
@@ -62,17 +138,13 @@
         <span class="row__icon"><app-icon name="cloud" [size]="20" /></span>
         <span class="row__text">
           <span class="row__title">Praca offline</span>
-          <span class="row__sub">Mapa i groby są zapisane na urządzeniu</span>
+          <span class="row__sub">{{
+            family.connected()
+              ? 'Zmiany bez zasięgu wyślą się, gdy wróci internet'
+              : 'Mapa i groby są zapisane na urządzeniu'
+          }}</span>
         </span>
         <span class="tag tag--on">Aktywna</span>
-      </div>
-      <div class="row row--static">
-        <span class="row__icon"><app-icon name="refresh" [size]="20" /></span>
-        <span class="row__text">
-          <span class="row__title">Synchronizacja z chmurą</span>
-          <span class="row__sub">Zmiany wyślą się, gdy wróci internet</span>
-        </span>
-        <span class="tag">Wkrótce</span>
       </div>
     </div>
   </section>

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import Dexie, { Table } from 'dexie';
 import { Grave } from '../../shared/models/grave.model';
 
@@ -7,11 +7,32 @@ export interface LocalGrave extends Grave {
   syncStatus: 'synced' | 'pending' | 'conflict';
 }
 
+/**
+ * Kolejka zmian do wysłania na rodzinną mapę. Jeden wpis na grób — liczy się
+ * ostatnia operacja; treść grobu czytamy z tabeli `graves` dopiero przy wysyłce.
+ */
+export interface OutboxEntry {
+  id: string;
+  op: 'put' | 'delete';
+  queuedAt: number;
+}
+
+/** Zmiana pobrana z serwera (rodzinnej mapy). */
+export interface RemoteChange {
+  id: string;
+  deleted: boolean;
+  data: Grave | null;
+}
+
 @Injectable({
   providedIn: 'root',
 })
 export class IndexedDbService extends Dexie {
   graves!: Table<LocalGrave, string>;
+  outbox!: Table<OutboxEntry, string>;
+
+  /** Rośnie przy każdej lokalnej zmianie — sygnał dla synchronizacji. */
+  readonly localChanges = signal(0);
 
   constructor() {
     super('GraveMapDB');
@@ -19,6 +40,11 @@ export class IndexedDbService extends Dexie {
     // Schema dla IndexedDB
     this.version(1).stores({
       graves: 'id, cemeteryName, syncStatus, createdAt, [latitude+longitude]',
+    });
+    // v2: kolejka zmian dla rodzinnej mapy
+    this.version(2).stores({
+      graves: 'id, cemeteryName, syncStatus, createdAt, [latitude+longitude]',
+      outbox: 'id, queuedAt',
     });
   }
 
@@ -30,7 +56,11 @@ export class IndexedDbService extends Dexie {
       ...grave,
       syncStatus: 'pending',
     };
-    await this.graves.add(localGrave);
+    await this.transaction('rw', this.graves, this.outbox, async () => {
+      await this.graves.add(localGrave);
+      await this.queue(grave.id, 'put');
+    });
+    this.notifyChange();
     return grave.id;
   }
 
@@ -58,18 +88,26 @@ export class IndexedDbService extends Dexie {
    * Aktualizuje grób w lokalnej bazie
    */
   async updateGrave(id: string, changes: Partial<Grave>): Promise<void> {
-    await this.graves.update(id, {
-      ...changes,
-      updatedAt: new Date().toISOString(),
-      syncStatus: 'pending',
+    await this.transaction('rw', this.graves, this.outbox, async () => {
+      await this.graves.update(id, {
+        ...changes,
+        updatedAt: new Date().toISOString(),
+        syncStatus: 'pending',
+      });
+      await this.queue(id, 'put');
     });
+    this.notifyChange();
   }
 
   /**
    * Usuwa grób z lokalnej bazy
    */
   async deleteGrave(id: string): Promise<void> {
-    await this.graves.delete(id);
+    await this.transaction('rw', this.graves, this.outbox, async () => {
+      await this.graves.delete(id);
+      await this.queue(id, 'delete');
+    });
+    this.notifyChange();
   }
 
   /**
@@ -102,9 +140,79 @@ export class IndexedDbService extends Dexie {
   }
 
   /**
-   * Czyści całą bazę (użycie ostrożnie!)
+   * Czyści całą bazę (użycie ostrożnie!). Na rodzinnej mapie usunięcie trafia
+   * też do kolejki — „zastąp wszystko z pliku" działa wtedy dla całej rodziny.
    */
   async clearAll(): Promise<void> {
-    await this.graves.clear();
+    await this.transaction('rw', this.graves, this.outbox, async () => {
+      const ids = (await this.graves.toCollection().primaryKeys()) as string[];
+      await this.graves.clear();
+      for (const id of ids) await this.queue(id, 'delete');
+    });
+    this.notifyChange();
+  }
+
+  // --- Kolejka zmian (rodzinna mapa) -------------------------------------
+
+  /** Wstawia do kolejki wszystkie lokalne groby — przy tworzeniu mapy i dołączaniu. */
+  async queueAllGraves(): Promise<void> {
+    await this.transaction('rw', this.graves, this.outbox, async () => {
+      const ids = (await this.graves.toCollection().primaryKeys()) as string[];
+      for (const id of ids) await this.queue(id, 'put');
+    });
+    this.notifyChange();
+  }
+
+  async getOutbox(limit: number): Promise<OutboxEntry[]> {
+    return this.outbox.orderBy('queuedAt').limit(limit).toArray();
+  }
+
+  async outboxCount(): Promise<number> {
+    return this.outbox.count();
+  }
+
+  /**
+   * Zdejmuje z kolejki wysłane wpisy — ale tylko te, których nikt w międzyczasie
+   * nie zmienił (nowsza zmiana tego samego grobu musi jeszcze pojechać).
+   */
+  async removeFromOutbox(sent: OutboxEntry[]): Promise<void> {
+    await this.transaction('rw', this.outbox, async () => {
+      for (const entry of sent) {
+        const current = await this.outbox.get(entry.id);
+        if (current && current.queuedAt === entry.queuedAt) await this.outbox.delete(entry.id);
+      }
+    });
+  }
+
+  async clearOutbox(): Promise<void> {
+    await this.outbox.clear();
+  }
+
+  /**
+   * Nakłada zmiany z serwera. Grób z niewysłaną lokalną zmianą pomijamy —
+   * nasza wersja pojedzie przy najbliższym wysłaniu i to ona wygra.
+   */
+  async applyRemoteChanges(changes: RemoteChange[]): Promise<boolean> {
+    let touched = false;
+    await this.transaction('rw', this.graves, this.outbox, async () => {
+      for (const change of changes) {
+        if (await this.outbox.get(change.id)) continue;
+        if (change.deleted || !change.data) {
+          await this.graves.delete(change.id);
+        } else {
+          await this.graves.put({ ...change.data, syncStatus: 'synced' });
+        }
+        touched = true;
+      }
+    });
+    return touched;
+  }
+
+  private async queue(id: string, op: OutboxEntry['op']): Promise<void> {
+    await this.outbox.put({ id, op, queuedAt: Date.now() + Math.random() });
+  }
+
+  private notifyChange(): void {
+    this.localChanges.update((n) => n + 1);
   }
 }

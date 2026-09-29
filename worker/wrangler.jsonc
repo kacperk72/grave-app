@@ -1,0 +1,24 @@
+// API rodzinnej mapy GraveMap. Wdrożenie: `npm run deploy` (lokalnie, po
+// `wrangler login`) albo automatycznie z CI po pushu na main.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "grave-app-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-29",
+  "observability": { "enabled": true },
+  // Adres *.workers.dev wystarczy — front łączy się z API przez CORS
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://darkgrey-octopus-623910.hostingersite.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "grave-app",
+      "database_id": "b97eb1dc-2a89-43dd-a029-8fc03b735dd7",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // Lokalnie (`npm run dev`) ALLOWED_ORIGINS nadpisuje flaga --var w package.json
+}

@@ -4,6 +4,7 @@ import { RouterOutlet } from '@angular/router';
 import { BottomNavComponent } from './layout/bottom-nav/bottom-nav.component';
 import { ThemeService } from './core/services/theme.service';
 import { AppUpdateService } from './core/services/app-update.service';
+import { FamilySyncService } from './core/services/family-sync.service';
 import { injectCurrentUrl } from './core/services/current-url';
 
 @Component({
@@ -18,6 +19,8 @@ export class App {
   // Wstrzyknięcie od razu nakłada zapisany motyw, zanim wyrenderuje się pierwszy ekran.
   private readonly theme = inject(ThemeService);
   protected readonly update = inject(AppUpdateService);
+  // Start synchronizacji rodzinnej mapy (jeśli telefon do niej dołączył)
+  private readonly familySync = inject(FamilySyncService);
   private readonly currentUrl = injectCurrentUrl();
 
   private readonly path = computed(() => this.currentUrl().split(/[?#]/)[0]);
@@ -26,6 +29,6 @@ export class App {
   // i nie pokazują dolnej nawigacji.
   readonly showNav = computed(() => {
     const p = this.path();
-    return !(p.startsWith('/welcome') || p.startsWith('/graves/'));
+    return !(p.startsWith('/welcome') || p.startsWith('/graves/') || p.startsWith('/rodzina'));
   });
 }
