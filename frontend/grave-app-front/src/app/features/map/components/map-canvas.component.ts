@@ -123,6 +123,25 @@ export class MapCanvasComponent implements OnDestroy {
     this.map.flyTo([coords.latitude, coords.longitude], this.map.getZoom(), { duration: 0.6 });
   }
 
+  /**
+   * Dopasowuje widok do wszystkich grobów. Marginesy omijają nakładki: pigułkę GPS
+   * u góry, zoom po lewej, przyciski po prawej i dolną nawigację.
+   */
+  fitToGraves(): void {
+    const graves = this.graves();
+    if (!this.map || graves.length === 0) return;
+    const padding = {
+      paddingTopLeft: L.point(80, 80),
+      paddingBottomRight: L.point(80, 120),
+    };
+    if (graves.length === 1) {
+      this.map.flyTo([graves[0].latitude, graves[0].longitude], 18, { duration: 0.6 });
+      return;
+    }
+    const bounds = L.latLngBounds(graves.map((g) => [g.latitude, g.longitude] as L.LatLngTuple));
+    this.map.flyToBounds(bounds, { ...padding, maxZoom: 19, duration: 0.6 });
+  }
+
   // --- Effect handlers -------------------------------------------------
 
   private syncLayer(kind: MapLayerKind): void {

@@ -55,7 +55,9 @@ import { RoutePlannerService } from './services/route-planner.service';
         [activeLayer]="activeLayer()"
         [isFullscreen]="isFullscreen()"
         [autoCenter]="autoCenter()"
+        [gravesCount]="graves().length"
         (centerOnUser)="centerOnUser()"
+        (showAllGraves)="showAllGraves()"
         (toggleLayer)="toggleLayer()"
         (toggleFullscreen)="toggleFullscreen()"
         (toggleRoutePanel)="toggleDrawer()"
@@ -168,6 +170,13 @@ export class MapPageComponent implements OnDestroy {
   centerOnUser(): void {
     this.canvas()?.flyToUser();
     this.autoCenter.set(true);
+  }
+
+  showAllGraves(): void {
+    // Bez tego następny odczyt GPS przesunąłby mapę z powrotem na użytkownika;
+    // przycisk lokalizacji włącza centrowanie ponownie.
+    this.autoCenter.set(false);
+    this.canvas()?.fitToGraves();
   }
 
   toggleLayer(): void {
