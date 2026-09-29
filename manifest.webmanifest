@@ -1,0 +1,26 @@
+{
+  "name": "GraveMap",
+  "short_name": "GraveMap",
+  "description": "Aplikacja do zarządzania i lokalizowania grobów bliskich",
+  "theme_color": "#10b981",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "./",
+  "start_url": "./",
+  "lang": "pl",
+  "icons": [
+    {
+      "src": "graveMap-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "graveMap-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

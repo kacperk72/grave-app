@@ -1,0 +1,166 @@
+{
+  "configVersion": 1,
+  "timestamp": 1790705049362,
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app",
+      "installMode": "prefetch",
+      "updateMode": "prefetch",
+      "cacheQueryOptions": {
+        "ignoreVary": true
+      },
+      "urls": [
+        "/chunk-2SLRE2QP.js",
+        "/chunk-2WRV7FKJ.js",
+        "/chunk-4IETGYIG.js",
+        "/chunk-66J3FGME.js",
+        "/chunk-FCH52KHI.js",
+        "/chunk-FDNBBNPX.js",
+        "/chunk-FIVVKNER.js",
+        "/chunk-FUFZJJLH.js",
+        "/chunk-LD7HP2X4.js",
+        "/chunk-MLMGL4QO.js",
+        "/chunk-N5H5PFUD.js",
+        "/chunk-OFUTEG5K.js",
+        "/chunk-OXVFMGRE.js",
+        "/chunk-P2RQZFK4.js",
+        "/chunk-RQJTBFXD.js",
+        "/chunk-SQ43YMIB.js",
+        "/chunk-UIH7U6NE.js",
+        "/chunk-UNHNJDOL.js",
+        "/chunk-X6DJZH23.js",
+        "/favicon.ico",
+        "/index.html",
+        "/main-53PXACBO.js",
+        "/manifest.webmanifest",
+        "/styles-FOMMYASB.css"
+      ],
+      "patterns": []
+    },
+    {
+      "name": "assets",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "cacheQueryOptions": {
+        "ignoreVary": true
+      },
+      "urls": [
+        "/favicon-16x16.png",
+        "/favicon-32x32.png",
+        "/graveMap-192x192.png",
+        "/graveMap-512x512.png",
+        "/media/layers-2x-TBM42ERR.png",
+        "/media/layers-55W3Q4RM.png",
+        "/media/marker-icon-2V3QKKVC.png",
+        "/media/primeicons-4GST5W3O.woff2",
+        "/media/primeicons-DHQU4SEP.svg",
+        "/media/primeicons-GEFHGEHP.ttf",
+        "/media/primeicons-P53SE5CV.woff",
+        "/media/primeicons-RSSEDYLY.eot"
+      ],
+      "patterns": []
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "osm-tiles",
+      "patterns": [
+        "https:\\/\\/a\\.tile\\.openstreetmap\\.org\\/.*",
+        "https:\\/\\/b\\.tile\\.openstreetmap\\.org\\/.*",
+        "https:\\/\\/c\\.tile\\.openstreetmap\\.org\\/.*"
+      ],
+      "strategy": "performance",
+      "maxSize": 4000,
+      "maxAge": 2592000000,
+      "cacheQueryOptions": {
+        "ignoreVary": true
+      },
+      "version": 1
+    },
+    {
+      "name": "esri-tiles",
+      "patterns": [
+        "https:\\/\\/server\\.arcgisonline\\.com\\/ArcGIS\\/rest\\/services\\/World_Imagery\\/.*"
+      ],
+      "strategy": "performance",
+      "maxSize": 4000,
+      "maxAge": 2592000000,
+      "cacheQueryOptions": {
+        "ignoreVary": true
+      },
+      "version": 1
+    },
+    {
+      "name": "google-fonts",
+      "patterns": [
+        "https:\\/\\/fonts\\.googleapis\\.com\\/.*",
+        "https:\\/\\/fonts\\.gstatic\\.com\\/.*"
+      ],
+      "strategy": "performance",
+      "maxSize": 30,
+      "maxAge": 31536000000,
+      "cacheQueryOptions": {
+        "ignoreVary": true
+      },
+      "version": 1
+    }
+  ],
+  "hashTable": {
+    "/chunk-2SLRE2QP.js": "62a1bc14debd7825ca6702646076094151923f71",
+    "/chunk-2WRV7FKJ.js": "f0438afed31ea5ca9c65fe02f11fc7de8ec63274",
+    "/chunk-4IETGYIG.js": "78e607ade9f4abcea21222f9a37085ae555f1c1f",
+    "/chunk-66J3FGME.js": "d445020c059ab26617cc8d2a9b5c8a9d042a58e6",
+    "/chunk-FCH52KHI.js": "d27f4e2f01a4a94cc6408f8eefe43aa7652dadfb",
+    "/chunk-FDNBBNPX.js": "630949fe19ca8b7ebe1a45a9c3c0408f2bc7594d",
+    "/chunk-FIVVKNER.js": "16401b73ea4e159293be476fc0d0bdc044666a72",
+    "/chunk-FUFZJJLH.js": "f4971701616500d5e33c82f9d0f1bfe70f9af3de",
+    "/chunk-LD7HP2X4.js": "663fe1d6db4c95b4abc9f3b88aa324e8f794ea07",
+    "/chunk-MLMGL4QO.js": "9dc35024c3d9a08bb348b817b8548d8be75e16d5",
+    "/chunk-N5H5PFUD.js": "484fee62cad6679873826ef624af710e576987ac",
+    "/chunk-OFUTEG5K.js": "2daf43664a5b192e82d63c09c1d8b0a98d22381f",
+    "/chunk-OXVFMGRE.js": "b233fe9f88f67e249f5fe8c959ce1434ab4bed69",
+    "/chunk-P2RQZFK4.js": "9f077b662c50d1e8610ca28c72eb18503a674177",
+    "/chunk-RQJTBFXD.js": "f3c541346b127844f4b511f10e22c92d29995fed",
+    "/chunk-SQ43YMIB.js": "7dda3f1546ad3ed6fae7a46198a72301a703589f",
+    "/chunk-UIH7U6NE.js": "4ca083ea0fd174fc2ba5fa14bee15c96e66f70ae",
+    "/chunk-UNHNJDOL.js": "e37866e66865e399164bf758fcfc553f80a3fc28",
+    "/chunk-X6DJZH23.js": "dd95e8b4e3ca055ea3d020ac6dcb4b29bfe92208",
+    "/favicon-16x16.png": "6cb85cf76a6a872af8e71752416f878d08033f2d",
+    "/favicon-32x32.png": "2e1d567a78f31b1725844454b2b5e8295bcf22e4",
+    "/favicon.ico": "29fce2416dd5e03422ddf395dc22714997835065",
+    "/graveMap-192x192.png": "cfb32eb623da309258b4d0a6e9cb144d296af2fc",
+    "/graveMap-512x512.png": "88efff8fd0f08862bdbd5e2519a169e3bde2e421",
+    "/index.html": "c490dcc893c31428c5588dc9fe40fbc72dc6b910",
+    "/main-53PXACBO.js": "49635b874901e017b3dce5c22ed6467dd44862e8",
+    "/manifest.webmanifest": "b38a5c4618d96089a0dcd339b58c4506874c3bc0",
+    "/media/layers-2x-TBM42ERR.png": "152a162333e46d24f9d89f566312fc0c64011dee",
+    "/media/layers-55W3Q4RM.png": "c9e7528e491a39232ba24a2706c6c739d6fb0f06",
+    "/media/marker-icon-2V3QKKVC.png": "60a90bcbb2b42b7ddb4556db94eb7c1084b0e5da",
+    "/media/primeicons-4GST5W3O.woff2": "837c1279b6af9d297f34fdb43e6fcc9206a79f32",
+    "/media/primeicons-DHQU4SEP.svg": "a07ae39027c1a780b42fd82fad7575c2924d9d28",
+    "/media/primeicons-GEFHGEHP.ttf": "3b878ca7e88945a8ec25814810b95367d8977ae6",
+    "/media/primeicons-P53SE5CV.woff": "361e3af71bb4e515feead2f787348a92a5527158",
+    "/media/primeicons-RSSEDYLY.eot": "e24ec13e95366c82ba69a821bf65a0eaef29450c",
+    "/styles-FOMMYASB.css": "05e6ba3927cb5a852b0a3289b88d00e9b943f052"
+  },
+  "navigationUrls": [
+    {
+      "positive": true,
+      "regex": "^\\/.*$"
+    },
+    {
+      "positive": false,
+      "regex": "^\\/(?:.+\\/)?[^/]*\\.[^/]*$"
+    },
+    {
+      "positive": false,
+      "regex": "^\\/(?:.+\\/)?[^/]*__[^/]*$"
+    },
+    {
+      "positive": false,
+      "regex": "^\\/(?:.+\\/)?[^/]*__[^/]*\\/.*$"
+    }
+  ],
+  "navigationRequestStrategy": "performance"
+}
