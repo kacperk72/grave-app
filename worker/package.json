@@ -1,0 +1,18 @@
+{
+  "name": "grave-app-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API rodzinnej mapy GraveMap — Cloudflare Worker + D1",
+  "scripts": {
+    "dev": "wrangler dev --port 8791 --var ALLOWED_ORIGINS:http://localhost:4260,http://localhost:4200",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply grave-app --local",
+    "db:migrate:remote": "wrangler d1 migrations apply grave-app --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260929.1",
+    "typescript": "~5.9.2",
+    "wrangler": "^4.143.1"
+  }
+}
