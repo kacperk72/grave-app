@@ -60,6 +60,15 @@ jobs:
       - name: Build produkcyjny
         run: npx ng build
 
+      # Bezpiecznik: produkcja nie może wołać lokalnego API. Tak skończyło się
+      # pierwsze wydanie rodzinnej mapy, gdy build nie podmieniał environment.ts.
+      - name: Brak adresów localhost w buildzie
+        run: |
+          if grep -rl "localhost:[0-9]" dist/grave-app-front/browser --include=*.js; then
+            echo "::error::Build produkcyjny zawiera adres localhost — sprawdź fileReplacements w angular.json."
+            exit 1
+          fi
+
       # Numer wersji widoczny w Ustawieniach aplikacji — łatwo sprawdzić, co jest na produkcji.
       - name: Stempel wersji
         run: |
