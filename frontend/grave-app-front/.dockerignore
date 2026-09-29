@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.angular/
+.cache/
+
+*.log
+npm-debug.log*
+
+.git/
+.vscode/
+.idea/
+
+docs/
+**/*.spec.ts
+
+Dockerfile
+.dockerignore

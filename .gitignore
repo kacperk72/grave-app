@@ -4,7 +4,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
+# package-lock.json JEST commitowany i tak ma zostać.
+# Dla aplikacji (inaczej niż dla bibliotek) lock jest częścią kodu: to on
+# gwarantuje, że build w kontenerze, na CI i na innej maszynie zainstaluje
+# dokładnie te same wersje. Bez niego `npm ci` nie ma z czego korzystać,
+# a `npm install` co jakiś czas podmienia wersje pod spodem.
+# Ignorowanie go doprowadziło tu do rozjazdu 11 pakietów z package.json.
 yarn.lock
 pnpm-lock.yaml
 
