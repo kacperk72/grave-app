@@ -21,6 +21,15 @@ Cloudflare Worker + baza D1. Przechowuje wspólne groby rodziny; aplikacja
 | GET | `/changes?since=N` | zmiany po `rev` N (strony po 500) |
 | POST | `/changes` | do 100 zmian naraz, w jednej transakcji |
 | POST | `/space/rotate` | nowy link, stary przestaje działać |
+| PUT | `/photos/:id?variant=full\|thumb` | bajty zdjęcia (JPEG/WebP, do 5 MB) |
+| GET | `/photos/:id?variant=full\|thumb` | pobranie zdjęcia |
+| DELETE | `/photos/:id` | usunięcie obu wariantów |
+
+**Zdjęcia** leżą w kuble R2 `grave-app-photos` pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`.
+Opis zdjęcia (id, które jest główne) jedzie w danych grobu przez `/changes`. Telefon
+zmniejsza zdjęcie przed wysłaniem (1600 px + miniatura 480 px) i trzyma bajty w IndexedDB,
+więc zdjęcia są widoczne bez zasięgu. Kubeł zakłada się raz:
+`npx wrangler r2 bucket create grave-app-photos` (R2 musi być włączone na koncie).
 
 ## Lokalnie
 
