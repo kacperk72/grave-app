@@ -48,6 +48,14 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/webp'];
 const PHOTO_VARIANTS = ['full', 'thumb'] as const;
 
+// Bezpiecznik darmowego planu R2 (10 GB, 1 mln zapisów/mies.). Cloudflare nie ma
+// twardego limitu wydatków, więc odmawiamy sami — z zapasem poniżej progu płatności.
+// Odczyty ogranicza sam darmowy plan Workers (100 tys. zapytań/dzień ≈ 3 mln/mies.
+// przy 10 mln darmowych odczytów R2), a usuwanie obiektów w R2 jest bezpłatne.
+const PHOTO_TOTAL_LIMIT_BYTES = 8_000_000_000; // 8 GB dla wszystkich rodzin razem
+const PHOTO_SPACE_LIMIT_BYTES = 1_000_000_000; // 1 GB na jedną rodzinną mapę
+const PHOTO_MONTHLY_WRITE_LIMIT = 900_000; // zapisy do R2 w miesiącu
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const cors = corsHeaders(request, env);
@@ -235,7 +243,19 @@ async function handlePhoto(
     const body = await request.arrayBuffer();
     if (body.byteLength === 0) throw new HttpError(400, 'Puste zdjęcie');
     if (body.byteLength > MAX_PHOTO_BYTES) throw new HttpError(413, 'Zdjęcie jest za duże');
+
+    await checkPhotoQuota(env, space, key(variant), body.byteLength);
     await env.PHOTOS.put(key(variant), body, { httpMetadata: { contentType: type } });
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO photo_objects (key, space_id, bytes, created_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET bytes = excluded.bytes`
+      ).bind(key(variant), space.id, body.byteLength, Date.now()),
+      env.DB.prepare(
+        `INSERT INTO usage_monthly (month, photo_writes) VALUES (?, 1)
+         ON CONFLICT (month) DO UPDATE SET photo_writes = photo_writes + 1`
+      ).bind(currentMonth()),
+    ]);
     return json({ ok: true }, 201);
   }
 
@@ -252,11 +272,46 @@ async function handlePhoto(
   }
 
   if (request.method === 'DELETE') {
-    await env.PHOTOS.delete(PHOTO_VARIANTS.map((v) => key(v)));
+    const keys = PHOTO_VARIANTS.map((v) => key(v));
+    await env.PHOTOS.delete(keys);
+    await env.DB.prepare(`DELETE FROM photo_objects WHERE key IN (?, ?)`)
+      .bind(...keys)
+      .run();
     return json({ ok: true });
   }
 
   throw new HttpError(405, 'Niedozwolona metoda');
+}
+
+/**
+ * Odmawia zapisu, który przekroczyłby bezpiecznik darmowego planu. Nadpisanie
+ * istniejącego obiektu liczy się jako różnica rozmiarów, nie nowe miejsce.
+ */
+async function checkPhotoQuota(env: Env, space: Space, objectKey: string, bytes: number): Promise<void> {
+  const row = await env.DB.prepare(
+    `SELECT
+       (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects) AS total,
+       (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects WHERE space_id = ?1) AS space,
+       (SELECT COALESCE(bytes, 0) FROM photo_objects WHERE key = ?2) AS existing,
+       (SELECT COALESCE(photo_writes, 0) FROM usage_monthly WHERE month = ?3) AS writes`
+  )
+    .bind(space.id, objectKey, currentMonth())
+    .first<{ total: number; space: number; existing: number | null; writes: number | null }>();
+
+  const growth = bytes - (row?.existing ?? 0);
+  if ((row?.writes ?? 0) >= PHOTO_MONTHLY_WRITE_LIMIT) {
+    throw new HttpError(429, 'W tym miesiącu wyczerpano limit wysyłania zdjęć. Spróbuj w przyszłym miesiącu.');
+  }
+  if ((row?.space ?? 0) + growth > PHOTO_SPACE_LIMIT_BYTES) {
+    throw new HttpError(507, 'Rodzinna mapa ma już komplet zdjęć (limit 1 GB). Usuń niepotrzebne, aby dodać nowe.');
+  }
+  if ((row?.total ?? 0) + growth > PHOTO_TOTAL_LIMIT_BYTES) {
+    throw new HttpError(507, 'Brak miejsca na nowe zdjęcia w aplikacji. Spróbuj później.');
+  }
+}
+
+function currentMonth(): string {
+  return new Date().toISOString().slice(0, 7);
 }
 
 function parseChanges(body: unknown): IncomingChange[] {

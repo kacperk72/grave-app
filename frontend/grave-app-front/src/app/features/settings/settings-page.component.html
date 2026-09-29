@@ -72,6 +72,12 @@
       </button>
     </div>
     }
+    @if (family.photoWarning(); as warning) {
+    <div class="status status--info" role="status">
+      <app-icon name="alert" [size]="18" />
+      <span>{{ warning }} Zdjęcie jest zapisane w tym telefonie.</span>
+    </div>
+    }
     @if (familyNote(); as msg) {
     <div [class]="'status status--' + msg.type" role="status">
       <app-icon [name]="msg.icon" [size]="18" />

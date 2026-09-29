@@ -44,6 +44,8 @@ export class FamilySyncService {
   readonly lastSyncAt = signal<number | null>(Number(readStorage(SYNCED_AT_KEY)) || null);
   readonly pending = signal(0);
   readonly errorMessage = signal<string | null>(null);
+  /** Zdjęcie odrzucone przez serwer (np. bezpiecznik limitu) — zostaje tylko w tym telefonie. */
+  readonly photoWarning = signal<string | null>(null);
 
   private running: Promise<void> | null = null;
   private rerun = false;
@@ -228,7 +230,17 @@ export class FamilySyncService {
           continue;
         }
         const blob = entry.variant ? await this.db.getPhotoBlob(entry.photoId, entry.variant) : undefined;
-        if (blob) await this.send('PUT', `${path}?variant=${entry.variant}`, blob);
+        try {
+          if (blob) await this.send('PUT', `${path}?variant=${entry.variant}`, blob);
+        } catch (err) {
+          // Odmowa na stałe (limit miejsca, format) nie może blokować synchronizacji grobów:
+          // zdjęcie zostaje w tym telefonie, a użytkownik dostaje komunikat.
+          if (err instanceof ApiError && [413, 415, 429, 507].includes(err.status)) {
+            this.photoWarning.set(err.message);
+            continue;
+          }
+          throw err;
+        }
       }
       await this.db.removeFromPhotoOutbox(batch);
     }
