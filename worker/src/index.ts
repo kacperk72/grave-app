@@ -10,10 +10,18 @@
  *   GET  /changes?since=N zmiany po rev N (z usunięciami)
  *   POST /changes         zapis zmian z telefonu
  *   POST /space/rotate    nowy link; stary przestaje działać
+ *   PUT  /photos/:id      zdjęcie grobu (?variant=full|thumb, treść = JPEG/WebP)
+ *   GET  /photos/:id      pobranie zdjęcia (?variant=full|thumb)
+ *   DELETE /photos/:id    usunięcie obu wariantów
+ *
+ * Zdjęcia leżą w R2 pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`, więc klucz
+ * jednej rodziny nie da dostępu do zdjęć innej. Opis zdjęcia (które, przy jakim
+ * grobie) jedzie razem z grobem przez /changes — R2 trzyma same bajty.
  */
 
 export interface Env {
   DB: D1Database;
+  PHOTOS: R2Bucket;
   /** Adresy frontu, które mogą wołać API, rozdzielone przecinkami. */
   ALLOWED_ORIGINS: string;
 }
@@ -35,6 +43,10 @@ const MAX_GRAVE_BYTES = 256 * 1024;
 const MAX_GRAVES_PER_SPACE = 5000;
 const PULL_PAGE_SIZE = 500;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+// Telefon zmniejsza zdjęcie przed wysłaniem (ok. 300 KB); limit z zapasem
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const PHOTO_TYPES = ['image/jpeg', 'image/webp'];
+const PHOTO_VARIANTS = ['full', 'thumb'] as const;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -83,6 +95,10 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method === 'POST' && path === '/changes') {
     return pushChanges(request, env, space);
+  }
+  const photo = path.match(/^\/photos\/([^/]+)$/);
+  if (photo) {
+    return handlePhoto(request, env, space, photo[1], url.searchParams.get('variant'));
   }
   if (request.method === 'POST' && path === '/space/rotate') {
     const token = newToken();
@@ -197,6 +213,52 @@ async function pushChanges(request: Request, env: Env, space: Space): Promise<Re
   return json({ rev });
 }
 
+async function handlePhoto(
+  request: Request,
+  env: Env,
+  space: Space,
+  photoId: string,
+  variantParam: string | null
+): Promise<Response> {
+  if (!ID_PATTERN.test(photoId)) throw new HttpError(400, 'Nieprawidłowy identyfikator zdjęcia');
+  const variant = variantParam ?? 'full';
+  if (!(PHOTO_VARIANTS as readonly string[]).includes(variant)) {
+    throw new HttpError(400, 'Nieznany wariant zdjęcia');
+  }
+  const key = (v: string) => `${space.id}/${photoId}/${v}`;
+
+  if (request.method === 'PUT') {
+    const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim();
+    if (!PHOTO_TYPES.includes(type)) throw new HttpError(415, 'Zdjęcie musi być w formacie JPEG lub WebP');
+    const length = Number(request.headers.get('Content-Length') ?? 0);
+    if (length > MAX_PHOTO_BYTES) throw new HttpError(413, 'Zdjęcie jest za duże');
+    const body = await request.arrayBuffer();
+    if (body.byteLength === 0) throw new HttpError(400, 'Puste zdjęcie');
+    if (body.byteLength > MAX_PHOTO_BYTES) throw new HttpError(413, 'Zdjęcie jest za duże');
+    await env.PHOTOS.put(key(variant), body, { httpMetadata: { contentType: type } });
+    return json({ ok: true }, 201);
+  }
+
+  if (request.method === 'GET') {
+    const object = await env.PHOTOS.get(key(variant));
+    if (!object) throw new HttpError(404, 'Nie ma takiego zdjęcia');
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': object.httpMetadata?.contentType ?? 'image/jpeg',
+        // Zdjęcie o danym id nigdy się nie zmienia; „private", bo wymaga klucza rodziny
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      },
+    });
+  }
+
+  if (request.method === 'DELETE') {
+    await env.PHOTOS.delete(PHOTO_VARIANTS.map((v) => key(v)));
+    return json({ ok: true });
+  }
+
+  throw new HttpError(405, 'Niedozwolona metoda');
+}
+
 function parseChanges(body: unknown): IncomingChange[] {
   const list = (body as { changes?: unknown })?.changes;
   if (!Array.isArray(list)) throw new HttpError(400, 'Brak listy zmian');
@@ -254,7 +316,7 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   if (!allowed.includes(origin)) return {};
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',

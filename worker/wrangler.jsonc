@@ -19,6 +19,13 @@
       "database_id": "b97eb1dc-2a89-43dd-a029-8fc03b735dd7",
       "migrations_dir": "migrations"
     }
+  ],
+  // Zdjęcia grobów (bajty). Kubeł zakłada się raz: `npx wrangler r2 bucket create grave-app-photos`
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "grave-app-photos"
+    }
   ]
   // Lokalnie (`npm run dev`) ALLOWED_ORIGINS nadpisuje flaga --var w package.json
 }
