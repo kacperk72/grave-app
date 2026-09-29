@@ -1,52 +1,65 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, computed, signal } from '@angular/core';
 
 export type ThemeMode = 'light' | 'dark';
+export type ThemePreference = ThemeMode | 'system';
 
 const STORAGE_KEY = 'gravemap-theme';
 
 /**
- * Zarządza motywem jasny/ciemny. Klasa `.app-dark` na <html> jest współdzielona
- * z presetem PrimeNG (darkModeSelector) oraz tokenami CSS aplikacji.
+ * Zarządza motywem jasny/ciemny/systemowy. Klasa `.app-dark` na <html> jest
+ * współdzielona z presetem PrimeNG (darkModeSelector) oraz tokenami CSS aplikacji.
  */
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
-  readonly mode = signal<ThemeMode>(this.readInitial());
+  private readonly media =
+    typeof window !== 'undefined' ? window.matchMedia?.('(prefers-color-scheme: dark)') : undefined;
+  private readonly systemDark = signal(this.media?.matches ?? false);
+
+  readonly preference = signal<ThemePreference>(this.readInitial());
+
+  /** Motyw faktycznie widoczny na ekranie. */
+  readonly mode = computed<ThemeMode>(() => {
+    const pref = this.preference();
+    if (pref === 'system') return this.systemDark() ? 'dark' : 'light';
+    return pref;
+  });
 
   constructor() {
-    this.apply(this.mode());
+    this.media?.addEventListener('change', (e) => {
+      this.systemDark.set(e.matches);
+      this.apply();
+    });
+    this.apply();
   }
 
   toggle(): void {
     this.set(this.mode() === 'dark' ? 'light' : 'dark');
   }
 
-  set(mode: ThemeMode): void {
-    this.mode.set(mode);
-    this.apply(mode);
+  set(preference: ThemePreference): void {
+    this.preference.set(preference);
+    this.apply();
     try {
-      localStorage.setItem(STORAGE_KEY, mode);
+      localStorage.setItem(STORAGE_KEY, preference);
     } catch {
       // localStorage niedostępny — motyw działa tylko w tej sesji
     }
   }
 
-  private apply(mode: ThemeMode): void {
-    const root = document.documentElement;
-    root.classList.toggle('app-dark', mode === 'dark');
+  private apply(): void {
+    const dark = this.mode() === 'dark';
+    document.documentElement.classList.toggle('app-dark', dark);
     const meta = document.querySelector('meta[name="theme-color"]');
-    meta?.setAttribute('content', mode === 'dark' ? '#23281f' : '#f3eee3');
+    meta?.setAttribute('content', dark ? '#121211' : '#f3f2ef');
   }
 
-  private readInitial(): ThemeMode {
+  private readInitial(): ThemePreference {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored === 'light' || stored === 'dark') return stored;
+      if (stored === 'light' || stored === 'dark' || stored === 'system') return stored;
     } catch {
       // ignore
     }
-    const prefersDark =
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-    return prefersDark ? 'dark' : 'light';
+    return 'system';
   }
 }

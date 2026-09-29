@@ -9,17 +9,23 @@ import {
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { ButtonModule } from 'primeng/button';
 import { DrawerModule } from 'primeng/drawer';
 import { SliderModule } from 'primeng/slider';
-import { DividerModule } from 'primeng/divider';
 
 import { Grave } from '../../../shared/models/grave.model';
 import { RoutePlannerService } from '../services/route-planner.service';
+import { IconComponent } from '../../../shared/components/icon.component';
+import { GravePhotoComponent } from '../../../shared/components/grave-photo.component';
+import {
+  graveTitle,
+  placeLine,
+  pluralPl,
+  primaryPhotoUrl,
+} from '../../../shared/utils/grave-display';
 
 @Component({
   selector: 'app-route-drawer',
-  imports: [DecimalPipe, FormsModule, ButtonModule, DrawerModule, SliderModule, DividerModule],
+  imports: [DecimalPipe, FormsModule, DrawerModule, SliderModule, IconComponent, GravePhotoComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <p-drawer
@@ -28,135 +34,94 @@ import { RoutePlannerService } from '../services/route-planner.service';
       [modal]="false"
       [dismissible]="true"
       styleClass="route-drawer"
-      [style]="{ height: 'auto', maxHeight: '70vh' }"
-      [showCloseIcon]="true"
+      [style]="{ height: 'auto', maxHeight: '80vh' }"
+      [showCloseIcon]="false"
     >
       <ng-template #header>
-        <div class="drawer-header">
-          <i class="pi pi-directions"></i>
-          <div>
-            <h3>Planowanie trasy</h3>
-            <small>Optymalna ścieżka przez groby</small>
+        <div class="head">
+          <div class="head__text">
+            <h2>Trasa odwiedzin</h2>
+            <span>{{ summary() }}</span>
           </div>
+          <button type="button" class="round-btn round-btn--sm close" aria-label="Zamknij" (click)="visible.set(false)">
+            <app-icon name="close" [size]="18" />
+          </button>
         </div>
       </ng-template>
 
-      <div class="drawer-body">
-        <div class="distance-row">
-          <label for="maxDistance">
-            Maksymalny promień: <strong>{{ maxRadius() }} km</strong>
+      <div class="body">
+        <div class="radius">
+          <label for="routeRadius">
+            Groby w promieniu <strong>{{ maxRadius() }} km</strong>
           </label>
           <p-slider
+            inputId="routeRadius"
             [ngModel]="maxRadius()"
             (ngModelChange)="onRadiusChange($event)"
             [min]="0.5"
             [max]="5"
             [step]="0.5"
-            styleClass="distance-slider"
+            styleClass="radius__slider"
           />
         </div>
 
-        <div class="action-row">
-          <p-button
-            severity="primary"
-            [loading]="planner.isCalculating()"
-            icon="pi pi-directions"
-            label="Zaplanuj trasę"
-            [disabled]="!hasUserCoords() || planner.isCalculating()"
-            (onClick)="onPlan()"
-            styleClass="action-row__main"
-          />
-          @if (planner.hasRoute()) {
-          <p-button
-            severity="secondary"
-            [text]="true"
-            icon="pi pi-times"
-            label="Wyczyść"
-            (onClick)="planner.clear()"
-          />
-          }
-        </div>
-
-        @if (planner.hasRoute()) {
-        <p-divider />
-
-        <div class="route-summary">
-          <div class="summary-item">
-            <i class="pi pi-flag-fill"></i>
-            <div>
-              <strong>{{ planner.route().length }}</strong>
-              <span>{{ planner.route().length === 1 ? 'grób' : 'grobów' }}</span>
-            </div>
-          </div>
-          <div class="summary-item">
-            <i class="pi pi-map"></i>
-            <div>
-              <strong>{{ (planner.totalDistance() / 1000).toFixed(2) }}</strong>
-              <span>km</span>
-            </div>
-          </div>
-          <div class="summary-item">
-            <i class="pi pi-clock"></i>
-            <div>
-              <strong>{{ walkingMinutes() }}</strong>
-              <span>min</span>
-            </div>
-          </div>
-        </div>
+        @if (!planner.hasRoute()) {
+        <button
+          type="button"
+          class="cta plan"
+          [disabled]="!hasUserCoords() || planner.isCalculating()"
+          (click)="onPlan()"
+        >
+          {{ planner.isCalculating() ? 'Układam trasę…' : 'Zaplanuj najkrótszą trasę' }}
+          <span class="cta__arrow"><app-icon name="route" [size]="20" /></span>
+        </button>
+        @if (!hasUserCoords()) {
+        <p class="hint">Włącz lokalizację, żeby ułożyć trasę od miejsca, w którym stoisz.</p>
+        } } @else {
 
         @if (planner.nextWaypoint(); as next) {
-        <div class="next-waypoint">
-          <i
-            class="pi pi-arrow-up bearing-icon"
-            [style.transform]="'rotate(' + next.arrowRotationDeg + 'deg)'"
-          ></i>
-          <div class="next-waypoint__text">
-            <small>NASTĘPNY GRÓB</small>
-            <strong>
-              {{ next.grave.deceasedPersons[0]?.firstName }}
-              {{ next.grave.deceasedPersons[0]?.lastName }}
-            </strong>
-            <span>
-              {{ next.distanceMeters | number : '1.0-0' }} m ·
-              {{ next.bearingDeg | number : '1.0-0' }}°
-            </span>
-          </div>
+        <div class="next">
+          <span class="next__arrow" [style.transform]="'rotate(' + next.arrowRotationDeg + 'deg)'">
+            <app-icon name="navigate" [size]="22" [stroke]="2" />
+          </span>
+          <span class="next__text">
+            <small>Następny grób</small>
+            <strong>{{ titleOf(next.grave) }}</strong>
+            <span>{{ next.distanceMeters | number : '1.0-0' }} m · {{ next.bearingDeg | number : '1.0-0' }}°</span>
+          </span>
         </div>
         }
 
-        <div class="route-list">
-          <h4>Kolejność odwiedzin</h4>
-          <ol>
-            @for (grave of planner.route(); track grave.id; let i = $index) {
-            <li>
-              <span class="bullet">{{ i + 1 }}</span>
-              <div class="info">
-                <strong>
-                  {{ grave.deceasedPersons[0]?.firstName }}
-                  {{ grave.deceasedPersons[0]?.lastName }}
-                </strong>
-                <small>{{ grave.cemeteryName }}</small>
-              </div>
-              <p-button
-                [rounded]="true"
-                [text]="true"
-                severity="danger"
-                size="small"
-                icon="pi pi-times"
-                (onClick)="onRemove(grave)"
-              />
-            </li>
-            }
-          </ol>
-        </div>
+        <ol class="stops">
+          @for (grave of planner.route(); track grave.id; let i = $index) {
+          <li class="stop">
+            <div class="stop__thumb">
+              <app-grave-photo [src]="photoOf(grave)" [seed]="grave.id" />
+              <span class="stop__num">{{ i + 1 }}</span>
+            </div>
+            <div class="stop__text">
+              <strong>{{ titleOf(grave) }}</strong>
+              <small>{{ placeOf(grave) }}</small>
+            </div>
+            <button
+              type="button"
+              class="stop__remove"
+              [attr.aria-label]="'Usuń z trasy: ' + titleOf(grave)"
+              (click)="onRemove(grave)"
+            >
+              <app-icon name="close" [size]="18" />
+            </button>
+          </li>
+          }
+        </ol>
 
-        <p-button
-          severity="success"
-          icon="pi pi-play"
-          label="Rozpocznij nawigację"
-          styleClass="navigate-btn"
-          (onClick)="onStartNavigation()"
-        />
+        <div class="actions">
+          <button type="button" class="pill-btn" (click)="planner.clear()">Wyczyść</button>
+          <button type="button" class="cta start" (click)="onStartNavigation()">
+            Nawiguj
+            <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
+          </button>
+        </div>
         }
       </div>
     </p-drawer>
@@ -172,11 +137,28 @@ export class RouteDrawerComponent {
 
   hasUserCoords = computed(() => !!this.userCoords());
 
-  walkingMinutes = computed(() =>
-    ((this.planner.totalDistance() / 1000) * 12).toFixed(0)
-  );
+  walkingMinutes = computed(() => Math.max(1, Math.round((this.planner.totalDistance() / 1000) * 12)));
+
+  summary = computed(() => {
+    if (!this.planner.hasRoute()) return 'Najkrótsza droga przez groby w pobliżu';
+    const n = this.planner.route().length;
+    const km = (this.planner.totalDistance() / 1000).toFixed(1).replace('.', ',');
+    return `${n} ${pluralPl(n, 'grób', 'groby', 'grobów')} · ${km} km · ok. ${this.walkingMinutes()} min pieszo`;
+  });
 
   maxRadius = computed(() => this.planner.maxRadiusKm);
+
+  titleOf(grave: Grave): string {
+    return graveTitle(grave);
+  }
+
+  placeOf(grave: Grave): string {
+    return [grave.cemeteryName, placeLine(grave)].filter(Boolean).join(' · ');
+  }
+
+  photoOf(grave: Grave): string | undefined {
+    return primaryPhotoUrl(grave);
+  }
 
   onRadiusChange(value: number): void {
     this.planner.maxRadiusKm = value;

@@ -1,24 +1,42 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
+import { IconComponent, IconName } from '../../shared/components/icon.component';
+import { injectCurrentUrl } from '../../core/services/current-url';
+
+interface NavItem {
+  id: 'start' | 'map' | 'route' | 'settings';
+  label: string;
+  icon: IconName;
+  link: string;
+  query?: Record<string, string>;
+}
+
+/**
+ * Pływająca grafitowa pigułka nawigacji. Aktywna zakładka rozwija się
+ * w białą pigułkę z podpisem; pozostałe to same ikony.
+ */
 @Component({
   selector: 'app-bottom-nav',
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nav class="bottom-nav" aria-label="Nawigacja główna">
-      <a routerLink="/map" routerLinkActive="active" class="tab">
-        <i class="pi pi-map"></i>
-        <span>Mapa</span>
+      @for (item of items; track item.id) {
+      <a
+        class="tab"
+        [class.active]="active() === item.id"
+        [routerLink]="item.link"
+        [queryParams]="item.query ?? null"
+        [attr.aria-current]="active() === item.id ? 'page' : null"
+        [attr.aria-label]="active() === item.id ? null : item.label"
+      >
+        <app-icon [name]="item.icon" />
+        @if (active() === item.id) {
+        <span>{{ item.label }}</span>
+        }
       </a>
-      <a routerLink="/graves" routerLinkActive="active" class="tab">
-        <i class="pi pi-list"></i>
-        <span>Moje groby</span>
-      </a>
-      <a routerLink="/settings" routerLinkActive="active" class="tab">
-        <i class="pi pi-cog"></i>
-        <span>Ustawienia</span>
-      </a>
+      }
     </nav>
   `,
   styles: [
@@ -29,54 +47,69 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 
       .bottom-nav {
         position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 900;
+        z-index: 1100;
+        left: 50%;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+        width: min(420px, calc(100% - 40px));
+        height: 68px;
+        padding: 0 10px;
         display: flex;
-        justify-content: space-around;
-        align-items: stretch;
-        gap: 4px;
-        padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
-        background: var(--paper);
-        border-top: 1px solid var(--hairline);
-        box-shadow: 0 -4px 20px rgba(45, 50, 40, 0.06);
+        align-items: center;
+        justify-content: space-between;
+        border-radius: var(--radius-pill);
+        background: #171715;
+        box-shadow: 0 12px 32px rgba(23, 23, 21, 0.22);
+      }
 
-        // Tylko mobile / tablet — na desktopie nawigacja przez panel boczny
-        @media (min-width: 900px) {
-          display: none;
-        }
+      // Na ciemnym tle pigułka jaśnieje o ton, żeby się nie zlewała
+      :host-context(.app-dark) .bottom-nav {
+        background: #2a2927;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
       }
 
       .tab {
-        flex: 1;
-        max-width: 140px;
-        display: flex;
-        flex-direction: column;
+        height: 48px;
+        min-width: 48px;
+        display: inline-flex;
         align-items: center;
-        gap: 3px;
-        padding: 8px 4px;
-        border-radius: var(--radius-md);
+        justify-content: center;
+        gap: 8px;
+        border-radius: var(--radius-pill);
+        color: #c9c6bf;
         text-decoration: none;
-        color: var(--ink-muted);
-        transition: background 0.15s ease, color 0.15s ease;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background 0.2s ease, color 0.2s ease, padding 0.2s ease;
 
-        i {
-          font-size: 19px;
+        &:hover:not(.active) {
+          color: #ffffff;
         }
 
-        span {
-          font-family: var(--font-sans);
-          font-size: 11.5px;
-          font-weight: 600;
+        &.active {
+          padding: 0 18px 0 14px;
+          background: #ffffff;
+          color: #171715;
         }
-      }
-
-      .tab.active {
-        color: var(--forest-strong);
-        background: color-mix(in srgb, var(--forest) 14%, transparent);
       }
     `,
   ],
 })
-export class BottomNavComponent {}
+export class BottomNavComponent {
+  private readonly url = injectCurrentUrl();
+
+  readonly items: NavItem[] = [
+    { id: 'start', label: 'Start', icon: 'home', link: '/start' },
+    { id: 'map', label: 'Mapa', icon: 'map', link: '/map' },
+    { id: 'route', label: 'Trasa', icon: 'route', link: '/map', query: { panel: 'route' } },
+    { id: 'settings', label: 'Ustawienia', icon: 'sliders', link: '/settings' },
+  ];
+
+  readonly active = computed<NavItem['id'] | null>(() => {
+    const url = this.url();
+    if (url.startsWith('/map')) return url.includes('panel=route') ? 'route' : 'map';
+    if (url.startsWith('/settings')) return 'settings';
+    if (url.startsWith('/start')) return 'start';
+    return null;
+  });
+}

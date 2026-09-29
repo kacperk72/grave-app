@@ -1,319 +1,300 @@
-<form [formGroup]="graveForm" (ngSubmit)="onSubmit()" class="grave-form">
-  <!-- Step indicator -->
-  <ol class="stepper">
+<form [formGroup]="graveForm" (ngSubmit)="onSubmit()" class="form">
+  <header class="topbar">
+    <button type="button" class="round-btn" (click)="onCancel()" aria-label="Zamknij">
+      <app-icon name="close" [size]="20" />
+    </button>
+    <span class="topbar__title">{{ heading() }}</span>
+    <span class="topbar__count">{{ currentStep() + 1 }} z {{ steps.length }}</span>
+  </header>
+
+  <ol class="progress" aria-label="Kroki">
     @for (step of steps; track step.index; let i = $index) {
-    <li
-      class="stepper__item"
-      [class.active]="currentStep() === i"
-      [class.completed]="i < currentStep()"
-      [class.disabled]="!canNavigateToStep(i)"
-      (click)="canNavigateToStep(i) && goToStep(i)"
-    >
-      <span class="stepper__bullet">
-        @if (i < currentStep()) {
-        <i class="pi pi-check"></i>
-        } @else {
-        <i [class]="'pi ' + step.icon"></i>
-        }
-      </span>
-      <span class="stepper__label">{{ step.label }}</span>
+    <li>
+      <button
+        type="button"
+        class="progress__step"
+        [class.active]="currentStep() === i"
+        [class.done]="i < currentStep()"
+        [disabled]="!canNavigateToStep(i)"
+        [attr.aria-current]="currentStep() === i ? 'step' : null"
+        (click)="goToStep(i)"
+      >
+        <span class="progress__bar"></span>
+        <span class="progress__label">{{ step.label }}</span>
+      </button>
     </li>
     }
   </ol>
 
-  <!-- Step 1: Lokalizacja -->
+  <!-- Krok 1: Lokalizacja -->
   @if (currentStep() === 0) {
   <section class="step" [@fadeIn]>
-    <header class="step__header">
-      <h3>Lokalizacja grobu</h3>
-      <p>Wklej pinezkę z Google Maps, użyj aktualnej lokalizacji lub wpisz współrzędne ręcznie</p>
-    </header>
+    <div class="intro">
+      <h1>Gdzie jest grób?</h1>
+      <p>
+        Stań przy nagrobku i zapisz jego położenie. Następnym razem aplikacja zaprowadzi cię prosto
+        na miejsce.
+      </p>
+    </div>
 
-    <div class="gmaps-import">
-      <label for="gmapsLink">Pinezka Google Maps</label>
-      <div class="gmaps-import__row">
+    @if (location(); as loc) {
+    <div class="located">
+      <span class="located__pin"><app-icon name="pin" /></span>
+      <span class="located__text">
+        <span class="located__title">Położenie zapisane</span>
+        <span class="located__sub">{{ loc.coords }}</span>
+      </span>
+      @if (loc.accuracy !== null) {
+      <span class="accuracy"><span class="accuracy__dot"></span>± {{ loc.accuracy }} m</span>
+      }
+    </div>
+    } @else if (locationGroup.touched) {
+    <p class="err err--block">Wybierz jeden ze sposobów poniżej, żeby zapisać położenie grobu.</p>
+    }
+
+    <div class="options" role="radiogroup" aria-label="Źródło lokalizacji">
+      <button
+        type="button"
+        role="radio"
+        class="option"
+        [class.selected]="source() === 'gps'"
+        [attr.aria-checked]="source() === 'gps'"
+        (click)="selectSource('gps')"
+      >
+        <span class="option__icon"><app-icon name="locate" [size]="20" /></span>
+        <span class="option__text">
+          <span class="option__title">Moja bieżąca lokalizacja</span>
+          <span class="option__sub">{{
+            loadingLocation() ? 'Ustalam pozycję…' : 'Najdokładniej, gdy stoisz przy grobie'
+          }}</span>
+        </span>
+        <span class="option__radio"><app-icon name="check" [size]="14" [stroke]="2.4" /></span>
+      </button>
+
+      <button
+        type="button"
+        role="radio"
+        class="option"
+        [class.selected]="source() === 'gmaps'"
+        [attr.aria-checked]="source() === 'gmaps'"
+        (click)="selectSource('gmaps')"
+      >
+        <span class="option__icon"><app-icon name="link" [size]="20" /></span>
+        <span class="option__text">
+          <span class="option__title">Link z Google Maps</span>
+          <span class="option__sub">Pinezka wysłana przez rodzinę</span>
+        </span>
+        <span class="option__radio"><app-icon name="check" [size]="14" [stroke]="2.4" /></span>
+      </button>
+
+      <button
+        type="button"
+        role="radio"
+        class="option"
+        [class.selected]="source() === 'manual'"
+        [attr.aria-checked]="source() === 'manual'"
+        (click)="selectSource('manual')"
+      >
+        <span class="option__icon"><app-icon name="map" [size]="20" /></span>
+        <span class="option__text">
+          <span class="option__title">Wpisz współrzędne</span>
+          <span class="option__sub">Gdy nie jesteś na miejscu</span>
+        </span>
+        <span class="option__radio"><app-icon name="check" [size]="14" [stroke]="2.4" /></span>
+      </button>
+    </div>
+
+    @if (source() === 'gps' && gpsError()) {
+    <div class="msg msg--error"><app-icon name="alert" [size]="18" /><span>{{ gpsError() }}</span></div>
+    }
+
+    @if (source() === 'gmaps') {
+    <div class="panel">
+      <label for="gmapsLink">Link do pinezki albo współrzędne</label>
+      <div class="panel__row">
         <input
           id="gmapsLink"
           pInputText
           #gmapsRef
           type="text"
-          placeholder="Wklej link do pinezki lub współrzędne (49.6126, 21.6488)"
+          placeholder="https://maps.app.goo.gl/… lub 49.6126, 21.6488"
           (keyup.enter)="applyGmapsLink(gmapsRef.value)"
         />
-        <p-button
-          type="button"
-          icon="pi pi-arrow-down"
-          label="Wypełnij"
-          (onClick)="applyGmapsLink(gmapsRef.value)"
-        />
+        <button type="button" class="pill-btn pill-btn--dark" (click)="applyGmapsLink(gmapsRef.value)">
+          Wypełnij
+        </button>
       </div>
-
       @if (gmapsMessage(); as msg) {
-      <div class="gmaps-msg" [class.success]="msg.type === 'success'" [class.info]="msg.type === 'info'" [class.error]="msg.type === 'error'">
-        <i class="pi {{ msg.icon }}"></i>
-        <span>{{ msg.text }}</span>
+      <div class="msg" [class]="'msg msg--' + msg.type">
+        <app-icon [name]="msg.icon" [size]="18" /><span>{{ msg.text }}</span>
       </div>
       @if (gmapsExpandUrl()) {
-      <p-button
-        type="button"
-        [outlined]="true"
-        size="small"
-        icon="pi pi-external-link"
-        label="Otwórz w Google Maps"
-        (onClick)="openGmapsLink()"
-        styleClass="gmaps-open"
-      />
+      <button type="button" class="pill-btn panel__open" (click)="openGmapsLink()">
+        Otwórz w Google Maps
+      </button>
       } }
-
-      <small class="hint">Działa dla pojedynczej pinezki (nie dla zapisanej listy).</small>
+      <small class="hint">Działa dla pojedynczej pinezki (nie dla zapisanej listy miejsc).</small>
     </div>
+    }
 
-    <div class="gmaps-divider"><span>lub wpisz ręcznie</span></div>
-
-    <div class="grid two-col" formGroupName="location">
+    @if (source() === 'manual') {
+    <div class="panel grid two-col" formGroupName="location">
       <div class="field">
         <label for="latitude">Szerokość geograficzna</label>
-        <input
-          id="latitude"
-          pInputText
-          type="number"
-          formControlName="latitude"
-          placeholder="52.2297"
-          step="0.000001"
-        />
+        <input id="latitude" pInputText type="number" formControlName="latitude" placeholder="50.07190" step="0.000001" />
         @if (locationGroup.get('latitude')?.touched && locationGroup.get('latitude')?.invalid) {
-        @if (locationGroup.get('latitude')?.hasError('required')) {
-        <small class="err">Pole wymagane</small>
-        } @if (locationGroup.get('latitude')?.hasError('min')) {
-        <small class="err">Wartość musi być ≥ -90</small>
-        } @if (locationGroup.get('latitude')?.hasError('max')) {
-        <small class="err">Wartość musi być ≤ 90</small>
-        } }
-      </div>
-
-      <div class="field">
-        <label for="longitude">Długość geograficzna</label>
-        <input
-          id="longitude"
-          pInputText
-          type="number"
-          formControlName="longitude"
-          placeholder="21.0122"
-          step="0.000001"
-        />
-        @if (locationGroup.get('longitude')?.touched && locationGroup.get('longitude')?.invalid) {
-        @if (locationGroup.get('longitude')?.hasError('required')) {
-        <small class="err">Pole wymagane</small>
-        } @if (locationGroup.get('longitude')?.hasError('min')) {
-        <small class="err">Wartość musi być ≥ -180</small>
-        } @if (locationGroup.get('longitude')?.hasError('max')) {
-        <small class="err">Wartość musi być ≤ 180</small>
-        } }
-      </div>
-    </div>
-
-    <p-button
-      type="button"
-      severity="secondary"
-      icon="pi pi-compass"
-      [label]="loadingLocation() ? 'Pobieranie lokalizacji…' : 'Użyj aktualnej lokalizacji'"
-      [loading]="loadingLocation()"
-      (onClick)="useCurrentLocation()"
-      styleClass="gps-btn"
-    />
-
-    <footer class="step__actions">
-      <p-button type="button" severity="secondary" [text]="true" label="Anuluj" (onClick)="onCancel()" />
-      <p-button type="button" severity="primary" label="Dalej" icon="pi pi-arrow-right" iconPos="right" (onClick)="nextStep()" />
-    </footer>
-  </section>
-  }
-
-  <!-- Step 2: Cmentarz -->
-  @if (currentStep() === 1) {
-  <section class="step" [@fadeIn]>
-    <header class="step__header">
-      <h3>Informacje o cmentarzu</h3>
-      <p>Podaj nazwę cmentarza i lokalizację grobu</p>
-    </header>
-
-    <div formGroupName="cemetery">
-      <div class="field full">
-        <label for="cemeteryName">Nazwa cmentarza</label>
-        <input
-          id="cemeteryName"
-          pInputText
-          formControlName="cemeteryName"
-          placeholder="Cmentarz Powązkowski"
-        />
-        @if (cemeteryGroup.get('cemeteryName')?.touched &&
-        cemeteryGroup.get('cemeteryName')?.hasError('required')) {
-        <small class="err">Pole wymagane</small>
+        <small class="err">Podaj wartość od -90 do 90</small>
         }
       </div>
-
-      <div class="grid two-col">
-        <div class="field">
-          <label for="sector">Sektor (opcjonalnie)</label>
-          <input id="sector" pInputText formControlName="sector" placeholder="A" />
-        </div>
-
-        <div class="field">
-          <label for="graveNumber">Numer grobu (opcjonalnie)</label>
-          <input id="graveNumber" pInputText formControlName="graveNumber" placeholder="123" />
-        </div>
+      <div class="field">
+        <label for="longitude">Długość geograficzna</label>
+        <input id="longitude" pInputText type="number" formControlName="longitude" placeholder="19.95280" step="0.000001" />
+        @if (locationGroup.get('longitude')?.touched && locationGroup.get('longitude')?.invalid) {
+        <small class="err">Podaj wartość od -180 do 180</small>
+        }
       </div>
     </div>
-
-    <footer class="step__actions">
-      <p-button type="button" severity="secondary" [text]="true" label="Wstecz" icon="pi pi-arrow-left" (onClick)="previousStep()" />
-      <p-button type="button" severity="primary" label="Dalej" icon="pi pi-arrow-right" iconPos="right" (onClick)="nextStep()" />
-    </footer>
+    }
   </section>
   }
 
-  <!-- Step 3: Osoby -->
+  <!-- Krok 2: Cmentarz -->
+  @if (currentStep() === 1) {
+  <section class="step" [@fadeIn]>
+    <div class="intro">
+      <h1>Na jakim cmentarzu?</h1>
+      <p>Kwatera i numer pomogą odnaleźć grób, gdy GPS jest niedokładny.</p>
+    </div>
+
+    <div class="panel" formGroupName="cemetery">
+      <div class="field">
+        <label for="cemeteryName">Nazwa cmentarza</label>
+        <input id="cemeteryName" pInputText formControlName="cemeteryName" placeholder="Cmentarz Rakowicki" />
+        @if (cemeteryGroup.get('cemeteryName')?.touched && cemeteryGroup.get('cemeteryName')?.hasError('required')) {
+        <small class="err">Podaj nazwę cmentarza</small>
+        }
+      </div>
+      <div class="grid two-col">
+        <div class="field">
+          <label for="sector">Kwatera / sektor <span class="optional">(opcjonalnie)</span></label>
+          <input id="sector" pInputText formControlName="sector" placeholder="kw. LXVII" />
+        </div>
+        <div class="field">
+          <label for="graveNumber">Numer miejsca <span class="optional">(opcjonalnie)</span></label>
+          <input id="graveNumber" pInputText formControlName="graveNumber" placeholder="12" />
+        </div>
+      </div>
+    </div>
+  </section>
+  }
+
+  <!-- Krok 3: Osoby -->
   @if (currentStep() === 2) {
   <section class="step" [@fadeIn]>
-    <header class="step__header">
-      <h3>Osoby pochowane</h3>
-      <p>Dodaj informacje o osobach pochowanych w tym grobie</p>
-    </header>
+    <div class="intro">
+      <h1>Kto tu spoczywa?</h1>
+      <p>Dodaj wszystkie osoby pochowane w tym grobie.</p>
+    </div>
 
     <div formArrayName="deceasedPersons" class="persons">
-      @for (person of deceasedPersons.controls; track i; let i = $index) {
-      <article class="person-card">
-        <header>
-          <span class="person-card__index">{{ i + 1 }}</span>
-          <h4>Osoba {{ i + 1 }}</h4>
+      @for (person of deceasedPersons.controls; track person; let i = $index) {
+      <article class="panel person" [formGroupName]="i">
+        <header class="person__head">
+          <span class="person__index">{{ i + 1 }}</span>
+          <h2>Osoba {{ i + 1 }}</h2>
           @if (deceasedPersons.length > 1) {
-          <p-button
+          <button
             type="button"
-            severity="danger"
-            [text]="true"
-            [rounded]="true"
-            icon="pi pi-trash"
-            size="small"
-            (onClick)="removePerson(i)"
-            pTooltip="Usuń osobę"
-            tooltipPosition="left"
-          />
+            class="person__remove"
+            [attr.aria-label]="'Usuń osobę ' + (i + 1)"
+            (click)="removePerson(i)"
+          >
+            <app-icon name="trash" [size]="18" />
+          </button>
           }
         </header>
 
-        <div [formGroupName]="i" class="person-card__body">
-          <div class="grid two-col">
-            <div class="field">
-              <label>Imię</label>
-              <input pInputText formControlName="firstName" placeholder="Jan" />
-              @if (person.get('firstName')?.touched && person.get('firstName')?.hasError('required')) {
-              <small class="err">Pole wymagane</small>
-              }
-            </div>
-
-            <div class="field">
-              <label>Nazwisko</label>
-              <input pInputText formControlName="lastName" placeholder="Kowalski" />
-              @if (person.get('lastName')?.touched && person.get('lastName')?.hasError('required')) {
-              <small class="err">Pole wymagane</small>
-              }
-            </div>
+        <div class="grid two-col">
+          <div class="field">
+            <label [for]="'firstName' + i">Imię</label>
+            <input [id]="'firstName' + i" pInputText formControlName="firstName" placeholder="Helena" />
+            @if (person.get('firstName')?.touched && person.get('firstName')?.hasError('required')) {
+            <small class="err">Podaj imię</small>
+            }
           </div>
+          <div class="field">
+            <label [for]="'lastName' + i">Nazwisko</label>
+            <input [id]="'lastName' + i" pInputText formControlName="lastName" placeholder="Nowak" />
+            @if (person.get('lastName')?.touched && person.get('lastName')?.hasError('required')) {
+            <small class="err">Podaj nazwisko</small>
+            }
+          </div>
+        </div>
 
-          <div class="grid two-col">
-            <div class="field">
-              <label>Data urodzenia</label>
-              <p-datepicker
-                formControlName="birthDate"
-                dateFormat="dd.mm.yy"
-                [showIcon]="true"
-                appendTo="body"
-                placeholder="DD.MM.RRRR"
-              />
-            </div>
-
-            <div class="field">
-              <label>Data śmierci</label>
-              <p-datepicker
-                formControlName="deathDate"
-                dateFormat="dd.mm.yy"
-                [showIcon]="true"
-                appendTo="body"
-                placeholder="DD.MM.RRRR"
-              />
-            </div>
+        <div class="grid two-col">
+          <div class="field">
+            <label [for]="'birthDate' + i">Data urodzenia</label>
+            <p-datepicker
+              [inputId]="'birthDate' + i"
+              formControlName="birthDate"
+              dateFormat="dd.mm.yy"
+              [showIcon]="true"
+              appendTo="body"
+              placeholder="DD.MM.RRRR"
+            />
+          </div>
+          <div class="field">
+            <label [for]="'deathDate' + i">Data śmierci</label>
+            <p-datepicker
+              [inputId]="'deathDate' + i"
+              formControlName="deathDate"
+              dateFormat="dd.mm.yy"
+              [showIcon]="true"
+              appendTo="body"
+              placeholder="DD.MM.RRRR"
+            />
           </div>
         </div>
       </article>
       }
     </div>
 
-    <p-button
-      type="button"
-      severity="secondary"
-      [outlined]="true"
-      icon="pi pi-plus"
-      label="Dodaj kolejną osobę"
-      (onClick)="addPerson()"
-      styleClass="add-person"
-    />
-
-    <footer class="step__actions">
-      <p-button type="button" severity="secondary" [text]="true" label="Wstecz" icon="pi pi-arrow-left" (onClick)="previousStep()" />
-      <p-button type="button" severity="primary" label="Dalej" icon="pi pi-arrow-right" iconPos="right" (onClick)="nextStep()" />
-    </footer>
+    <button type="button" class="add-more" (click)="addPerson()">
+      <app-icon name="plus" [size]="18" /> Dodaj kolejną osobę
+    </button>
   </section>
   }
 
-  <!-- Step 4: Dodatkowe -->
+  <!-- Krok 4: Dodatkowe -->
   @if (currentStep() === 3) {
   <section class="step" [@fadeIn]>
-    <header class="step__header">
-      <h3>Dodatkowe informacje</h3>
-      <p>Notatki i informacje o płatnościach (opcjonalnie)</p>
-    </header>
+    <div class="intro">
+      <h1>Coś jeszcze?</h1>
+      <p>Wskazówki dojścia i termin opłaty za miejsce. Wszystko opcjonalne.</p>
+    </div>
 
-    <div class="field full">
-      <label for="notes">Notatki</label>
-      <textarea
-        id="notes"
-        pTextarea
-        formControlName="notes"
-        rows="4"
-        placeholder="Np. Przy dużym dębie, w pobliżu kaplicy…"
-      ></textarea>
+    <div class="panel">
+      <div class="field">
+        <label for="notes">Notatka</label>
+        <textarea id="notes" pTextarea formControlName="notes" rows="4" placeholder="Np. przy dużym dębie, trzeci rząd od kaplicy"></textarea>
+      </div>
     </div>
 
     @if (!showPaymentInfo()) {
-    <p-button
-      type="button"
-      severity="secondary"
-      [outlined]="true"
-      icon="pi pi-plus"
-      label="Dodaj informacje o płatnościach"
-      (onClick)="togglePaymentInfo()"
-      styleClass="add-payment"
-    />
+    <button type="button" class="add-more" (click)="togglePaymentInfo()">
+      <app-icon name="calendar" [size]="18" /> Dodaj termin opłaty za miejsce
+    </button>
     } @else {
-    <div class="payment-section">
-      <header class="payment-section__header">
-        <h4 class="subsection">Płatności za miejsce</h4>
-        <p-button
-          type="button"
-          severity="secondary"
-          [text]="true"
-          [rounded]="true"
-          icon="pi pi-times"
-          size="small"
-          (onClick)="togglePaymentInfo()"
-          pTooltip="Usuń sekcję płatności"
-          tooltipPosition="left"
-        />
+    <div class="panel">
+      <header class="person__head">
+        <h2>Opłata za miejsce</h2>
+        <button type="button" class="person__remove" aria-label="Usuń dane o opłacie" (click)="togglePaymentInfo()">
+          <app-icon name="close" [size]="18" />
+        </button>
       </header>
-
       <div class="grid two-col">
         <div class="field">
-          <label for="paymentDueDate">Data wygaśnięcia opłaty</label>
+          <label for="paymentDueDate">Opłacone do</label>
           <p-datepicker
             inputId="paymentDueDate"
             formControlName="paymentDueDate"
@@ -323,47 +304,52 @@
             placeholder="DD.MM.RRRR"
           />
         </div>
-
         <div class="field">
-          <label for="lastPaymentAmount">Kwota ostatniej płatności</label>
+          <label for="lastPaymentAmount">Ostatnia kwota</label>
           <p-inputnumber
             inputId="lastPaymentAmount"
             formControlName="lastPaymentAmount"
             mode="decimal"
             [minFractionDigits]="0"
             [maxFractionDigits]="2"
-            suffix=" PLN"
-            placeholder="500"
+            suffix=" zł"
+            placeholder="240 zł"
           />
         </div>
       </div>
-
       <div class="field">
-        <label for="paymentPeriodMonths">Okres opłaty (miesiące)</label>
+        <label for="paymentPeriodMonths">Na ile miesięcy opłacono</label>
         <p-inputnumber
           inputId="paymentPeriodMonths"
           formControlName="paymentPeriodMonths"
           [showButtons]="true"
           [min]="1"
           [max]="600"
-          placeholder="12"
+          placeholder="240"
         />
-        <small class="hint">Na ile miesięcy została uiszczona opłata</small>
+        <small class="hint">Opłata prolongacyjna zwykle obejmuje 20 lat, czyli 240 miesięcy.</small>
       </div>
     </div>
     }
-
-    <footer class="step__actions">
-      <p-button type="button" severity="secondary" [text]="true" label="Wstecz" icon="pi pi-arrow-left" (onClick)="previousStep()" />
-      <p-button
-        type="submit"
-        severity="success"
-        [icon]="editMode() ? 'pi pi-save' : 'pi pi-check'"
-        [label]="submitting() ? 'Zapisywanie…' : editMode() ? 'Zapisz zmiany' : 'Dodaj grób'"
-        [loading]="submitting()"
-        [disabled]="graveForm.invalid || submitting()"
-      />
-    </footer>
   </section>
   }
+
+  <footer class="bottom">
+    @if (currentStep() > 0) {
+    <button type="button" class="pill-btn pill-btn--light back" (click)="previousStep()" aria-label="Wstecz">
+      <app-icon name="arrow-left" [size]="20" />
+    </button>
+    }
+    @if (currentStep() < steps.length - 1) {
+    <button type="button" class="cta next" (click)="nextStep()">
+      {{ nextLabel() }}
+      <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
+    </button>
+    } @else {
+    <button type="submit" class="cta next" [disabled]="graveForm.invalid || submitting()">
+      {{ submitting() ? 'Zapisywanie…' : editMode() ? 'Zapisz zmiany' : 'Zapisz grób' }}
+      <span class="cta__arrow"><app-icon name="check" [size]="20" [stroke]="2.2" /></span>
+    </button>
+    }
+  </footer>
 </form>

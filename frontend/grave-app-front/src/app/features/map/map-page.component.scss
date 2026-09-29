@@ -7,14 +7,15 @@
 .map-shell {
   position: relative;
   width: 100%;
-  height: calc(100vh - 64px);
+  // Bez nagłówka mapa zajmuje cały ekran; pigułka nawigacji leży na niej
+  height: 100dvh;
   overflow: hidden;
-  background: var(--p-surface-100, #f1f5f9);
+  background: var(--stone-2);
 
   &.fullscreen {
     position: fixed;
     inset: 0;
-    height: 100vh;
+    height: 100dvh;
     z-index: 9999;
   }
 }
@@ -101,14 +102,20 @@
   }
 }
 
+:host ::ng-deep .leaflet-control-zoom {
+  border: none !important;
+  border-radius: var(--radius-pill) !important;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(23, 23, 21, 0.1) !important;
+}
+
 :host ::ng-deep .leaflet-control-zoom a {
-  background: rgba(255, 255, 255, 0.96) !important;
-  color: #0f172a !important;
-  border: 1px solid rgba(15, 23, 42, 0.08) !important;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
-  width: 36px;
-  height: 36px;
-  line-height: 36px;
+  background: var(--card) !important;
+  color: var(--ink) !important;
+  border: none !important;
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
 }
 
 :host ::ng-deep .leaflet-control-attribution {
@@ -137,8 +144,24 @@
   }
 }
 
-@media (max-width: 599px) {
-  .map-shell {
-    height: calc(100vh - 56px);
+
+// Kontrolki Leaflet omijają pływającą nawigację i kartę grobu:
+// zoom trafia na środek lewej krawędzi, atrybucja nad pigułkę nawigacji.
+:host ::ng-deep .leaflet-bottom.leaflet-left {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+
+  .leaflet-control {
+    margin-left: 16px;
+    margin-bottom: 0;
   }
+}
+
+:host ::ng-deep .leaflet-bottom.leaflet-right {
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+}
+
+.map-shell.fullscreen ::ng-deep .leaflet-bottom.leaflet-right {
+  bottom: 0;
 }

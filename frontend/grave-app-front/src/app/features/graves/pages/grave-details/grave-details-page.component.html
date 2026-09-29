@@ -1,0 +1,134 @@
+@if (grave(); as g) {
+<div class="details">
+  <div class="hero">
+    <app-grave-photo
+      class="hero__photo"
+      [src]="activePhoto()"
+      [seed]="g.id"
+      [alt]="'Zdjęcie grobu: ' + title()"
+    />
+    <div class="hero__top">
+      <button type="button" class="round-btn round-btn--sm" (click)="back()" aria-label="Wróć">
+        <app-icon name="arrow-left" [size]="20" />
+      </button>
+      <a class="round-btn round-btn--sm" [routerLink]="['/graves', g.id, 'edit']" aria-label="Edytuj grób">
+        <app-icon name="edit" [size]="20" />
+      </a>
+    </div>
+
+    @if (photos().length > 1) {
+    <div class="hero__thumbs" role="group" aria-label="Zdjęcia">
+      @for (photo of photos(); track photo.id; let i = $index) {
+      <button
+        type="button"
+        class="thumb"
+        [class.active]="photoIndex() === i"
+        [attr.aria-pressed]="photoIndex() === i"
+        [attr.aria-label]="'Zdjęcie ' + (i + 1)"
+        (click)="photoIndex.set(i)"
+      >
+        <img [src]="photo.thumbnailUrl || photo.url" alt="" />
+      </button>
+      }
+    </div>
+    }
+  </div>
+
+  <div class="body">
+    <div class="title-row">
+      <div class="title-row__text">
+        <h1>{{ title() }}</h1>
+        @if (subline()) {
+        <p class="sub">{{ subline() }}</p>
+        }
+      </div>
+      @if (distance()) {
+      <div class="distance">
+        <strong>{{ distance() }}</strong>
+        <span>od ciebie</span>
+      </div>
+      }
+    </div>
+
+    <ul class="facts">
+      <li>
+        <span class="facts__icon"><app-icon name="pin" [size]="18" /></span>
+        <span class="facts__text">
+          <span class="facts__title">{{ g.cemeteryName }}</span>
+          <span class="facts__sub">{{ coords() }}</span>
+        </span>
+      </li>
+      @if (place()) {
+      <li>
+        <span class="facts__icon"><app-icon name="sector" [size]="18" /></span>
+        <span class="facts__text">
+          <span class="facts__title">{{ place() }}</span>
+          <span class="facts__sub">Kwatera i miejsce</span>
+        </span>
+      </li>
+      }
+      <li>
+        <span class="facts__icon"><app-icon name="clock" [size]="18" /></span>
+        <span class="facts__text">
+          <span class="facts__title">{{ lastVisited() }}</span>
+          <span class="facts__sub">Ostatnia wizyta</span>
+        </span>
+      </li>
+      @if (g.notes) {
+      <li>
+        <span class="facts__icon"><app-icon name="note" [size]="18" /></span>
+        <span class="facts__text">
+          <span class="facts__title facts__title--note">{{ g.notes }}</span>
+          <span class="facts__sub">Notatka</span>
+        </span>
+      </li>
+      }
+    </ul>
+
+    @if (payment(); as p) {
+    <div class="payment" [class.payment--calm]="!p.badge">
+      <span class="payment__icon"><app-icon name="calendar" [size]="18" /></span>
+      <span class="payment__text">
+        <span class="payment__title">{{ p.title }}</span>
+        @if (p.details) {
+        <span class="payment__sub">{{ p.details }}</span>
+        }
+      </span>
+      @if (p.badge) {
+      <span class="payment__badge">{{ p.badge }}</span>
+      }
+    </div>
+    }
+
+    <button type="button" class="delete" (click)="deleteGrave()">
+      <app-icon name="trash" [size]="16" /> Usuń grób
+    </button>
+  </div>
+
+  <div class="actions">
+    <button
+      type="button"
+      class="pill-btn pill-btn--light visited"
+      [disabled]="busy() || visitSaved()"
+      (click)="markVisited()"
+    >
+      <app-icon name="check" [size]="18" [stroke]="2" />
+      {{ visitSaved() ? 'Zapisano' : 'Odwiedzony' }}
+    </button>
+    <a class="cta navigate" routerLink="/map" [queryParams]="{ navigate: g.id }">
+      Nawiguj
+      <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
+    </a>
+  </div>
+  <p class="sr-only" aria-live="polite">{{ visitSaved() ? 'Zapisano dzisiejszą wizytę' : '' }}</p>
+</div>
+} @else if (notFound()) {
+<div class="missing">
+  <h1>Nie ma takiego grobu</h1>
+  <p>Mógł zostać usunięty albo link jest niepełny.</p>
+  <a class="cta" routerLink="/start">
+    Wróć na start
+    <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
+  </a>
+</div>
+}

@@ -1,19 +1,12 @@
-<mat-sidenav-container class="app-container">
-  <mat-sidenav
-    #drawer
-    class="app-sidenav"
-    mode="over"
-    [opened]="isSidenavOpen()"
-    (closedStart)="closeSidenav()"
-  >
-    <app-sidenav (close)="closeSidenav()" />
-  </mat-sidenav>
-
-  <mat-sidenav-content class="app-content">
-    <app-header (toggleSidenav)="toggleSidenav()" />
-    <main class="page-container" [class.edge-to-edge]="isEdgeToEdge()">
-      <router-outlet />
-    </main>
-    <app-bottom-nav />
-  </mat-sidenav-content>
-</mat-sidenav-container>
+<main class="app-main" [class.with-nav]="showNav()">
+  <router-outlet />
+</main>
+@if (showNav()) {
+<app-bottom-nav />
+}
+@if (update.updateReady()) {
+<div class="update" role="status">
+  <span>Jest nowa wersja aplikacji</span>
+  <button type="button" (click)="update.reload()">Odśwież</button>
+</div>
+}

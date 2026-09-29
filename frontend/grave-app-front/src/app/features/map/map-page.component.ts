@@ -6,8 +6,11 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { ToastModule } from 'primeng/toast';
@@ -20,8 +23,7 @@ import { Grave } from '../../shared/models/grave.model';
 import { MapCanvasComponent, MapLayerKind } from './components/map-canvas.component';
 import { MapOverlayComponent } from './components/map-overlay.component';
 import { RouteDrawerComponent } from './components/route-drawer.component';
-import { GraveDetailsDialogComponent } from './components/grave-details-dialog.component';
-import { GalleryDialogComponent, GalleryRef } from './components/gallery-dialog.component';
+import { MapGraveCardComponent } from './components/map-grave-card.component';
 import { RoutePlannerService } from './services/route-planner.service';
 
 @Component({
@@ -31,8 +33,7 @@ import { RoutePlannerService } from './services/route-planner.service';
     MapCanvasComponent,
     MapOverlayComponent,
     RouteDrawerComponent,
-    GraveDetailsDialogComponent,
-    GalleryDialogComponent,
+    MapGraveCardComponent,
   ],
   providers: [MessageService, RoutePlannerService],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -60,22 +61,21 @@ import { RoutePlannerService } from './services/route-planner.service';
         (toggleRoutePanel)="toggleDrawer()"
       />
 
+      @if (selectedGrave() && !isDrawerOpen()) {
+      <app-map-grave-card
+        [grave]="selectedGrave()"
+        [userCoords]="currentCoords()"
+        (close)="selectedGrave.set(undefined)"
+        (navigate)="onNavigateToGrave($event)"
+      />
+      }
+
       <app-route-drawer
-        [(visible)]="isDrawerOpen"
+        [visible]="isDrawerOpen()"
+        (visibleChange)="onDrawerVisibleChange($event)"
         [graves]="graves()"
         [userCoords]="currentCoords()"
       />
-
-      <app-grave-details-dialog
-        [(visible)]="isDetailsOpen"
-        [grave]="selectedGrave()"
-        [userCoords]="currentCoords()"
-        (navigate)="onNavigateToGrave($event)"
-        (markVisited)="onMarkAsVisited($event)"
-        (openGallery)="onOpenGallery($event)"
-      />
-
-      <app-gallery-dialog [(visible)]="isGalleryOpen" [active]="activeGallery()" />
 
       <p-toast position="top-center" />
     </div>
@@ -87,6 +87,8 @@ export class MapPageComponent implements OnDestroy {
   private readonly graveService = inject(GraveService);
   private readonly toast = inject(MessageService);
   private readonly planner = inject(RoutePlannerService);
+  private readonly router = inject(Router);
+  private readonly queryParams = toSignal(inject(ActivatedRoute).queryParamMap);
 
   private readonly canvas = viewChild(MapCanvasComponent);
 
@@ -100,11 +102,11 @@ export class MapPageComponent implements OnDestroy {
   readonly isFullscreen = signal(false);
 
   readonly isDrawerOpen = signal(false);
-  readonly isDetailsOpen = signal(false);
-  readonly isGalleryOpen = signal(false);
 
   readonly selectedGrave = signal<Grave | undefined>(undefined);
-  readonly activeGallery = signal<GalleryRef | undefined>(undefined);
+
+  /** Grób z `?navigate=<id>`, do którego ruszamy, gdy tylko znane są groby i pozycja. */
+  private pendingNavigateId: string | null = null;
 
   private watchSub?: Subscription;
 
@@ -113,6 +115,37 @@ export class MapPageComponent implements OnDestroy {
       const coords = this.currentCoords();
       if (!coords) return;
       this.planner.refreshGuidance(coords.latitude, coords.longitude, coords.heading);
+    });
+
+    // Zakładka „Trasa" w nawigacji otwiera szufladę przez ?panel=route,
+    // a „Nawiguj" ze szczegółów grobu przekazuje ?navigate=<id>.
+    effect(() => {
+      const params = this.queryParams();
+      const panel = params?.get('panel');
+      const navigateId = params?.get('navigate');
+      untracked(() => {
+        this.isDrawerOpen.set(panel === 'route');
+        if (navigateId) this.pendingNavigateId = navigateId;
+      });
+    });
+
+    effect(() => {
+      const graves = this.graves();
+      const coords = this.currentCoords();
+      const id = this.pendingNavigateId;
+      if (!id || graves.length === 0) return;
+      const grave = graves.find((g) => g.id === id);
+      untracked(() => {
+        if (!grave) {
+          this.pendingNavigateId = null;
+          return;
+        }
+        this.selectedGrave.set(grave);
+        // Trasa wymaga pozycji — poczekaj na pierwszy odczyt GPS
+        if (!coords) return;
+        this.pendingNavigateId = null;
+        this.onNavigateToGrave(grave.id);
+      });
     });
 
     this.startTracking();
@@ -130,7 +163,6 @@ export class MapPageComponent implements OnDestroy {
 
   onGraveClick(grave: Grave): void {
     this.selectedGrave.set(grave);
-    this.isDetailsOpen.set(true);
   }
 
   centerOnUser(): void {
@@ -153,42 +185,41 @@ export class MapPageComponent implements OnDestroy {
   }
 
   toggleDrawer(): void {
-    this.isDrawerOpen.update((v) => !v);
+    this.setDrawer(!this.isDrawerOpen());
   }
 
-  onOpenGallery(ref: { graveId: string; index: number }): void {
-    this.activeGallery.set(ref);
-    this.isGalleryOpen.set(true);
+  onDrawerVisibleChange(visible: boolean): void {
+    this.setDrawer(visible);
   }
 
   onNavigateToGrave(graveId: string): void {
     const grave = this.graveService.graves().find((g) => g.id === graveId);
     const coords = this.currentCoords();
     if (!grave) return;
-    this.planner.setSingleDestination(grave, coords?.latitude, coords?.longitude);
+    if (!coords) {
+      this.toast.add({
+        severity: 'info',
+        summary: 'Czekam na sygnał GPS',
+        detail: 'Trasa pojawi się, gdy aplikacja ustali twoją pozycję.',
+        life: 3000,
+      });
+      this.pendingNavigateId = graveId;
+      return;
+    }
+    this.planner.setSingleDestination(grave, coords.latitude, coords.longitude);
     this.planner.startNavigation();
-    this.isDrawerOpen.set(true);
+    this.selectedGrave.set(undefined);
+    this.setDrawer(true);
   }
 
-  async onMarkAsVisited(graveId: string): Promise<void> {
-    try {
-      await this.graveService.markAsVisited(graveId);
-      const coords = this.currentCoords();
-      this.planner.removeFromRoute(graveId, coords?.latitude, coords?.longitude);
-      this.toast.add({
-        severity: 'success',
-        summary: 'Oznaczono jako odwiedzony',
-        detail: 'Data wizyty została zapisana',
-        life: 2500,
-      });
-      this.isDetailsOpen.set(false);
-    } catch {
-      this.toast.add({
-        severity: 'error',
-        summary: 'Błąd',
-        detail: 'Nie udało się zapisać wizyty',
-      });
-    }
+  /** Stan szuflady trzymamy w adresie, żeby zakładka „Trasa" w nawigacji była aktywna. */
+  private setDrawer(open: boolean): void {
+    this.isDrawerOpen.set(open);
+    this.router.navigate([], {
+      queryParams: { panel: open ? 'route' : null, navigate: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   private startTracking(): void {

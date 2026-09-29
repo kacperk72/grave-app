@@ -1,0 +1,182 @@
+<div class="screen">
+  <header class="head">
+    <div class="head__text">
+      <span class="date">{{ today }}</span>
+      <h1>Twoi bliscy,<br />zawsze blisko</h1>
+    </div>
+    <a class="round-btn round-btn--dark add-btn" routerLink="/graves/add" aria-label="Dodaj grób">
+      <app-icon name="plus" />
+    </a>
+  </header>
+
+  <div class="search-row">
+    <label class="search">
+      <app-icon name="search" [size]="20" />
+      <span class="sr-only">Szukaj osoby lub cmentarza</span>
+      <input
+        type="search"
+        placeholder="Szukaj osoby lub cmentarza"
+        [value]="query()"
+        (input)="onSearch($any($event.target).value)"
+      />
+      @if (query()) {
+      <button type="button" class="search__clear" (click)="clearSearch()" aria-label="Wyczyść">
+        <app-icon name="close" [size]="18" />
+      </button>
+      }
+    </label>
+    <button
+      type="button"
+      class="round-btn filter-btn"
+      [class.round-btn--dark]="sortOpen()"
+      [attr.aria-expanded]="sortOpen()"
+      aria-controls="sort-panel"
+      aria-label="Sortowanie"
+      (click)="sortOpen.set(!sortOpen())"
+    >
+      <app-icon name="filter" />
+    </button>
+  </div>
+
+  @if (sortOpen()) {
+  <div id="sort-panel" class="sort-panel" role="group" aria-label="Sortuj według">
+    <span class="sort-panel__label">Sortuj według</span>
+    <div class="chip-row chip-row--wrap">
+      @for (opt of sortOptions(); track opt.value) {
+      <button
+        type="button"
+        class="chip"
+        [class.active]="effectiveSort() === opt.value"
+        [disabled]="opt.disabled"
+        [attr.aria-pressed]="effectiveSort() === opt.value"
+        (click)="selectSort(opt.value)"
+      >
+        {{ opt.label }}
+      </button>
+      }
+    </div>
+  </div>
+  }
+
+  @if (graveService.gravesCount() > 0) {
+  <div class="chip-row chip-row--bleed" role="group" aria-label="Filtry">
+    <button
+      type="button"
+      class="chip"
+      [class.active]="isFilter('all')"
+      [attr.aria-pressed]="isFilter('all')"
+      (click)="setFilter({ kind: 'all' })"
+    >
+      Wszystkie · {{ graveService.gravesCount() }}
+    </button>
+    <button
+      type="button"
+      class="chip"
+      [class.active]="isFilter('near')"
+      [attr.aria-pressed]="isFilter('near')"
+      [disabled]="!userLocation()"
+      (click)="setFilter({ kind: 'near' })"
+    >
+      Blisko mnie
+    </button>
+    @if (dueCount() > 0) {
+    <button
+      type="button"
+      class="chip"
+      [class.active]="isFilter('due')"
+      [attr.aria-pressed]="isFilter('due')"
+      (click)="setFilter({ kind: 'due' })"
+    >
+      <span class="chip__dot"></span>Do opłaty
+    </button>
+    }
+    @for (name of cemeteries(); track name) {
+    <button
+      type="button"
+      class="chip"
+      [class.active]="isFilter('cemetery', name)"
+      [attr.aria-pressed]="isFilter('cemetery', name)"
+      (click)="setFilter({ kind: 'cemetery', name })"
+    >
+      {{ shortCemetery(name) }}
+    </button>
+    }
+  </div>
+  }
+
+  @if (graveService.isLoading() && graveService.gravesCount() === 0) {
+  <p class="muted">Wczytywanie grobów…</p>
+  } @else if (graveService.gravesCount() === 0) {
+  <section class="empty">
+    <span class="empty__icon"><app-icon name="pin" [size]="28" /></span>
+    <h2>Dodaj pierwszy grób</h2>
+    <p>
+      Stań przy nagrobku i zapisz jego położenie. Następnym razem aplikacja zaprowadzi cię prosto
+      na miejsce.
+    </p>
+    <a class="cta" routerLink="/graves/add">
+      Dodaj grób
+      <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
+    </a>
+    <button type="button" class="empty__demo" (click)="generateMockData()">
+      <app-icon name="bolt" [size]="16" /> Wygeneruj dane testowe
+    </button>
+  </section>
+  } @else {
+  <section class="section">
+    <div class="section__head">
+      <h2>{{ sectionTitle() }}</h2>
+      <a routerLink="/map">Na mapie</a>
+    </div>
+
+    @if (cards().length === 0) {
+    <p class="muted">Nic tu nie pasuje. Zmień filtr albo wyszukiwaną frazę.</p>
+    } @else {
+    <div class="cards">
+      @for (card of cards(); track card.id) {
+      <a class="card" [routerLink]="['/graves', card.id]">
+        <div class="card__photo">
+          <app-grave-photo [src]="card.photo" [seed]="card.id" />
+          @if (card.distance) {
+          <span class="card__distance">
+            <app-icon name="navigate" [size]="14" [stroke]="2" />{{ card.distance }}
+          </span>
+          }
+        </div>
+        <div class="card__body">
+          <span class="card__title">{{ card.title }}</span>
+          @if (card.meta) {
+          <span class="card__meta">{{ card.meta }}</span>
+          }
+        </div>
+      </a>
+      }
+    </div>
+    }
+  </section>
+
+  @if (attention().length > 0) {
+  <section class="section">
+    <div class="section__head">
+      <h2>Wymaga uwagi</h2>
+      @if (dueCount() > attention().length) {
+      <button type="button" class="link-btn" (click)="setFilter({ kind: 'due' })">
+        Wszystkie · {{ dueCount() }}
+      </button>
+      }
+    </div>
+    <div class="attention">
+      @for (item of attention(); track item.id) {
+      <a class="attention__row" [routerLink]="['/graves', item.id]">
+        <span class="attention__icon"><app-icon name="calendar" /></span>
+        <span class="attention__text">
+          <span class="attention__title">Opłata za miejsce</span>
+          <span class="attention__sub">{{ item.title }} · {{ item.dueText }}</span>
+        </span>
+        <span class="due-badge">{{ item.badge }}</span>
+      </a>
+      }
+    </div>
+  </section>
+  } }
+</div>

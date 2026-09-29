@@ -1,10 +1,23 @@
 import { Routes } from '@angular/router';
 
+import { onboardingGuard } from './core/services/onboarding';
+
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'map',
+    redirectTo: 'start',
     pathMatch: 'full',
+  },
+  {
+    path: 'welcome',
+    loadComponent: () =>
+      import('./features/welcome/welcome-page.component').then((m) => m.WelcomePageComponent),
+  },
+  {
+    path: 'start',
+    canActivate: [onboardingGuard],
+    loadComponent: () =>
+      import('./features/home/home-page.component').then((m) => m.HomePageComponent),
   },
   {
     path: 'map',
@@ -12,9 +25,10 @@ export const routes: Routes = [
       import('./features/map/map-page.component').then((m) => m.MapPageComponent),
   },
   {
+    // Dawna lista „Moje groby" — teraz jest częścią ekranu Start
     path: 'graves',
-    loadComponent: () =>
-      import('./features/graves/graves-page.component').then((m) => m.GravesPageComponent),
+    pathMatch: 'full',
+    redirectTo: 'start',
   },
   {
     path: 'graves/add',
@@ -24,12 +38,26 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'graves/:id/edit',
+    loadComponent: () =>
+      import('./features/graves/pages/add-grave/add-grave-page.component').then(
+        (m) => m.AddGravePageComponent
+      ),
+  },
+  {
+    path: 'graves/:id',
+    loadComponent: () =>
+      import('./features/graves/pages/grave-details/grave-details-page.component').then(
+        (m) => m.GraveDetailsPageComponent
+      ),
+  },
+  {
     path: 'settings',
     loadComponent: () =>
       import('./features/settings/settings-page.component').then((m) => m.SettingsPageComponent),
   },
   {
     path: '**',
-    redirectTo: 'map',
+    redirectTo: 'start',
   },
 ];
