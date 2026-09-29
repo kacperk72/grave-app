@@ -66,6 +66,16 @@ import { IconComponent } from '../../../shared/components/icon.component';
       <button
         type="button"
         class="map-btn"
+        aria-label="Pokaż wszystkie groby"
+        title="Pokaż wszystkie groby"
+        [disabled]="gravesCount() === 0"
+        (click)="showAllGraves.emit()"
+      >
+        <app-icon name="pins" />
+      </button>
+      <button
+        type="button"
+        class="map-btn"
         [class.map-btn--on]="autoCenter() && !!userCoords()"
         aria-label="Pokaż moją lokalizację"
         title="Pokaż moją lokalizację"
@@ -96,8 +106,10 @@ export class MapOverlayComponent {
   activeLayer = input<MapLayerKind>('street');
   isFullscreen = input<boolean>(false);
   autoCenter = input<boolean>(true);
+  gravesCount = input<number>(0);
 
   centerOnUser = output<void>();
+  showAllGraves = output<void>();
   toggleLayer = output<void>();
   toggleFullscreen = output<void>();
   toggleRoutePanel = output<void>();
