@@ -5,7 +5,7 @@
       class="hero__photo"
       [photo]="activePhoto()"
       variant="full"
-      [seed]="g.id"
+     
       [alt]="'Zdjęcie grobu: ' + title()"
     />
     <div class="hero__top">
@@ -63,7 +63,7 @@
         [attr.aria-label]="'Zdjęcie ' + (i + 1)"
         (click)="photoIndex.set(i)"
       >
-        <app-grave-photo [photo]="photo" [seed]="photo.id" />
+        <app-grave-photo [photo]="photo" />
       </button>
       }
     </div>

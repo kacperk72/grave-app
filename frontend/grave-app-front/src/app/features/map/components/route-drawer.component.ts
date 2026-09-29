@@ -96,7 +96,7 @@ import {
           @for (grave of planner.route(); track grave.id; let i = $index) {
           <li class="stop">
             <div class="stop__thumb">
-              <app-grave-photo [photo]="photoOf(grave)" [seed]="grave.id" />
+              <app-grave-photo [photo]="photoOf(grave)" />
               <span class="stop__num">{{ i + 1 }}</span>
             </div>
             <div class="stop__text">
