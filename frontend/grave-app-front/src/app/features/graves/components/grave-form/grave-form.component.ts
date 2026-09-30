@@ -78,9 +78,9 @@ export class GraveFormComponent implements OnInit {
 
   steps = [
     { index: 0, label: 'Lokalizacja' },
-    { index: 1, label: 'Cmentarz' },
-    { index: 2, label: 'Osoby' },
-    { index: 3, label: 'Dodatkowe' },
+    { index: 1, label: 'Opis' },
+    { index: 2, label: 'Cmentarz' },
+    { index: 3, label: 'Osoby' },
   ];
 
   readonly nextLabel = computed(() => {
@@ -342,11 +342,11 @@ export class GraveFormComponent implements OnInit {
       this.locationGroup.markAllAsTouched();
       return;
     }
-    if (current === 1 && this.cemeteryGroup.invalid) {
+    if (current === 2 && this.cemeteryGroup.invalid) {
       this.cemeteryGroup.markAllAsTouched();
       return;
     }
-    if (current === 2 && this.deceasedPersons.invalid) {
+    if (current === 3 && this.deceasedPersons.invalid) {
       this.deceasedPersons.markAllAsTouched();
       return;
     }
@@ -371,8 +371,7 @@ export class GraveFormComponent implements OnInit {
     const current = this.currentStep();
     if (index < current) return true;
     if (index > 0 && this.locationGroup.invalid) return false;
-    if (index > 1 && this.cemeteryGroup.invalid) return false;
-    if (index > 2 && this.deceasedPersons.invalid) return false;
+    if (index > 2 && this.cemeteryGroup.invalid) return false;
     return true;
   }
 }

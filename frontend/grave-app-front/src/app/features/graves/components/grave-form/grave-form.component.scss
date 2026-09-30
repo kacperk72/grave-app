@@ -386,6 +386,16 @@
   border-color: transparent;
 }
 
+:host ::ng-deep .field .p-datepicker input {
+  padding-right: 48px;
+}
+
+// Ikona kalendarza w polu daty, w kolorze opisów — zamiast osobnego przycisku obok
+:host ::ng-deep .field .p-datepicker-input-icon-container {
+  right: 16px;
+  color: var(--ink-muted);
+}
+
 :host ::ng-deep .field textarea.p-textarea {
   padding: 14px 16px;
   background: var(--stone);

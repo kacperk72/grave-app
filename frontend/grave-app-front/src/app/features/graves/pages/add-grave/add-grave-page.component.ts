@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { Location } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { map } from 'rxjs/operators';
@@ -9,6 +10,7 @@ import { MessageService } from 'primeng/api';
 import { GraveFormComponent } from '../../components/grave-form/grave-form.component';
 import { GraveService } from '../../services/grave.service';
 import { CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
+import { canGoBackInApp } from '../../../../core/services/navigation';
 
 /** Dodawanie nowego grobu (`/graves/add`) i edycja istniejącego (`/graves/:id/edit`). */
 @Component({
@@ -35,6 +37,7 @@ import { CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.
 export class AddGravePageComponent {
   private readonly graveService = inject(GraveService);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly toast = inject(MessageService);
 
   readonly editId = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => p.get('id'))));
@@ -48,7 +51,9 @@ export class AddGravePageComponent {
     try {
       if (id) {
         await this.graveService.updateGrave(id, dto);
-        this.router.navigate(['/graves', id], { replaceUrl: true });
+        // Wróć do szczegółów, z których weszła edycja — bez dokładania wpisu do historii,
+        // inaczej strzałka „wstecz" w szczegółach prowadziłaby z powrotem do edycji
+        this.leave(['/graves', id]);
         return;
       }
       const created = await this.graveService.addGrave(dto as CreateGraveDto);
@@ -66,6 +71,12 @@ export class AddGravePageComponent {
 
   onCancel(): void {
     const id = this.editId();
-    this.router.navigate(id ? ['/graves', id] : ['/start']);
+    this.leave(id ? ['/graves', id] : ['/start']);
+  }
+
+  /** Cofnij się w historii; gdy formularz otwarto z linku, przejdź do `fallback`. */
+  private leave(fallback: unknown[]): void {
+    if (canGoBackInApp()) this.location.back();
+    else this.router.navigate(fallback, { replaceUrl: true });
   }
 }

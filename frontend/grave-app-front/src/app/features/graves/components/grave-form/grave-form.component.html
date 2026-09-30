@@ -158,12 +158,35 @@
   </section>
   }
 
-  <!-- Krok 2: Cmentarz -->
+  <!-- Krok 2: Opis -->
   @if (currentStep() === 1) {
   <section class="step" [@fadeIn]>
     <div class="intro">
+      <h1>Kim byli?</h1>
+      <p>Kilka słów o osobach w tym grobie: kim byli dla rodziny, wspomnienia, wskazówki dojścia.</p>
+    </div>
+
+    <div class="panel">
+      <div class="field">
+        <label for="notes">Opis</label>
+        <textarea
+          id="notes"
+          pTextarea
+          formControlName="notes"
+          rows="7"
+          placeholder="Np. dziadek Jasia, ojciec Karoliny i Władysława. Grób przy dużym dębie, trzeci rząd od kaplicy."
+        ></textarea>
+      </div>
+    </div>
+  </section>
+  }
+
+  <!-- Krok 3: Cmentarz (z opłatą za miejsce) -->
+  @if (currentStep() === 2) {
+  <section class="step" [@fadeIn]>
+    <div class="intro">
       <h1>Na jakim cmentarzu?</h1>
-      <p>Kwatera i numer pomogą odnaleźć grób, gdy GPS jest niedokładny.</p>
+      <p>Kwatera i numer pomogą odnaleźć grób, gdy GPS jest niedokładny. Tu zapiszesz też termin opłaty.</p>
     </div>
 
     <div class="panel" formGroupName="cemetery">
@@ -185,11 +208,63 @@
         </div>
       </div>
     </div>
+    @if (!showPaymentInfo()) {
+    <button type="button" class="add-more" (click)="togglePaymentInfo()">
+      <app-icon name="calendar" [size]="18" /> Dodaj termin opłaty za miejsce
+    </button>
+    } @else {
+    <div class="panel">
+      <header class="person__head">
+        <h2>Opłata za miejsce</h2>
+        <button type="button" class="person__remove" aria-label="Usuń dane o opłacie" (click)="togglePaymentInfo()">
+          <app-icon name="close" [size]="18" />
+        </button>
+      </header>
+      <div class="grid two-col">
+        <div class="field">
+          <label for="paymentDueDate">Opłacone do</label>
+          <p-datepicker
+            inputId="paymentDueDate"
+            formControlName="paymentDueDate"
+            dateFormat="dd.mm.yy"
+            [showIcon]="true"
+            iconDisplay="input"
+            appendTo="body"
+            placeholder="DD.MM.RRRR"
+          />
+        </div>
+        <div class="field">
+          <label for="lastPaymentAmount">Ostatnia kwota</label>
+          <p-inputnumber
+            inputId="lastPaymentAmount"
+            formControlName="lastPaymentAmount"
+            mode="decimal"
+            [minFractionDigits]="0"
+            [maxFractionDigits]="2"
+            suffix=" zł"
+            placeholder="240 zł"
+          />
+        </div>
+      </div>
+      <div class="field">
+        <label for="paymentPeriodMonths">Na ile miesięcy opłacono</label>
+        <p-inputnumber
+          inputId="paymentPeriodMonths"
+          formControlName="paymentPeriodMonths"
+          [showButtons]="true"
+          [min]="1"
+          [max]="600"
+          placeholder="240"
+        />
+        <small class="hint">Opłata prolongacyjna zwykle obejmuje 20 lat, czyli 240 miesięcy.</small>
+      </div>
+    </div>
+    }
   </section>
   }
 
-  <!-- Krok 3: Osoby -->
-  @if (currentStep() === 2) {
+  <!-- Krok 4: Osoby -->
+  @if (currentStep() === 3) {
   <section class="step" [@fadeIn]>
     <div class="intro">
       <h1>Kto tu spoczywa?</h1>
@@ -239,6 +314,7 @@
               formControlName="birthDate"
               dateFormat="dd.mm.yy"
               [showIcon]="true"
+              iconDisplay="input"
               appendTo="body"
               placeholder="DD.MM.RRRR"
             />
@@ -250,6 +326,7 @@
               formControlName="deathDate"
               dateFormat="dd.mm.yy"
               [showIcon]="true"
+              iconDisplay="input"
               appendTo="body"
               placeholder="DD.MM.RRRR"
             />
@@ -262,75 +339,6 @@
     <button type="button" class="add-more" (click)="addPerson()">
       <app-icon name="plus" [size]="18" /> Dodaj kolejną osobę
     </button>
-  </section>
-  }
-
-  <!-- Krok 4: Dodatkowe -->
-  @if (currentStep() === 3) {
-  <section class="step" [@fadeIn]>
-    <div class="intro">
-      <h1>Coś jeszcze?</h1>
-      <p>Wskazówki dojścia i termin opłaty za miejsce. Wszystko opcjonalne.</p>
-    </div>
-
-    <div class="panel">
-      <div class="field">
-        <label for="notes">Notatka</label>
-        <textarea id="notes" pTextarea formControlName="notes" rows="4" placeholder="Np. przy dużym dębie, trzeci rząd od kaplicy"></textarea>
-      </div>
-    </div>
-
-    @if (!showPaymentInfo()) {
-    <button type="button" class="add-more" (click)="togglePaymentInfo()">
-      <app-icon name="calendar" [size]="18" /> Dodaj termin opłaty za miejsce
-    </button>
-    } @else {
-    <div class="panel">
-      <header class="person__head">
-        <h2>Opłata za miejsce</h2>
-        <button type="button" class="person__remove" aria-label="Usuń dane o opłacie" (click)="togglePaymentInfo()">
-          <app-icon name="close" [size]="18" />
-        </button>
-      </header>
-      <div class="grid two-col">
-        <div class="field">
-          <label for="paymentDueDate">Opłacone do</label>
-          <p-datepicker
-            inputId="paymentDueDate"
-            formControlName="paymentDueDate"
-            dateFormat="dd.mm.yy"
-            [showIcon]="true"
-            appendTo="body"
-            placeholder="DD.MM.RRRR"
-          />
-        </div>
-        <div class="field">
-          <label for="lastPaymentAmount">Ostatnia kwota</label>
-          <p-inputnumber
-            inputId="lastPaymentAmount"
-            formControlName="lastPaymentAmount"
-            mode="decimal"
-            [minFractionDigits]="0"
-            [maxFractionDigits]="2"
-            suffix=" zł"
-            placeholder="240 zł"
-          />
-        </div>
-      </div>
-      <div class="field">
-        <label for="paymentPeriodMonths">Na ile miesięcy opłacono</label>
-        <p-inputnumber
-          inputId="paymentPeriodMonths"
-          formControlName="paymentPeriodMonths"
-          [showButtons]="true"
-          [min]="1"
-          [max]="600"
-          placeholder="240"
-        />
-        <small class="hint">Opłata prolongacyjna zwykle obejmuje 20 lat, czyli 240 miesięcy.</small>
-      </div>
-    </div>
-    }
   </section>
   }
 

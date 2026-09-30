@@ -5,9 +5,13 @@
       class="hero__photo"
       [photo]="activePhoto()"
       variant="full"
-     
       [alt]="'Zdjęcie grobu: ' + title()"
     />
+    @if (activePhoto()) {
+    <button type="button" class="hero__zoom" (click)="viewerOpen.set(true)" aria-label="Powiększ zdjęcie">
+      <span class="hero__zoom-badge"><app-icon name="expand" [size]="16" /> Powiększ</span>
+    </button>
+    }
     <div class="hero__top">
       <button type="button" class="round-btn round-btn--sm" (click)="back()" aria-label="Wróć">
         <app-icon name="arrow-left" [size]="20" />
@@ -86,6 +90,12 @@
       }
     </div>
 
+    @if (g.notes) {
+    <section class="description" aria-label="Opis">
+      <p>{{ g.notes }}</p>
+    </section>
+    }
+
     <ul class="facts">
       <li>
         <span class="facts__icon"><app-icon name="pin" [size]="18" /></span>
@@ -110,15 +120,6 @@
           <span class="facts__sub">Ostatnia wizyta</span>
         </span>
       </li>
-      @if (g.notes) {
-      <li>
-        <span class="facts__icon"><app-icon name="note" [size]="18" /></span>
-        <span class="facts__text">
-          <span class="facts__title facts__title--note">{{ g.notes }}</span>
-          <span class="facts__sub">Notatka</span>
-        </span>
-      </li>
-      }
     </ul>
 
     @if (payment(); as p) {
@@ -162,6 +163,14 @@
   </div>
   <p class="sr-only" aria-live="polite">{{ visitSaved() ? 'Zapisano dzisiejszą wizytę' : '' }}</p>
 </div>
+@if (viewerOpen()) {
+<app-photo-viewer
+  [photos]="photos()"
+  [startIndex]="activeIndex()"
+  [alt]="'Zdjęcie grobu: ' + title()"
+  (closed)="viewerOpen.set(false)"
+/>
+}
 } @else if (notFound()) {
 <div class="missing">
   <h1>Nie ma takiego grobu</h1>
