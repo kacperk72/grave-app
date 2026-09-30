@@ -20,10 +20,35 @@ export function graveTitle(grave: Grave): string {
 
 /** „1938 – 2019", „† 2019", „ur. 1938" albo pusty napis. */
 export function yearsRange(person: Pick<DeceasedPerson, 'birthDate' | 'deathDate'>): string {
-  const birth = person.birthDate ? new Date(person.birthDate).getFullYear() : null;
-  const death = person.deathDate ? new Date(person.deathDate).getFullYear() : null;
+  const year = (v: string | null) => (!v ? null : isYearOnly(v) ? Number(v) : new Date(v).getFullYear());
+  const birth = year(person.birthDate);
+  const death = year(person.deathDate);
   if (birth && death) return `${birth} – ${death}`;
   if (death) return `† ${death}`;
+  if (birth) return `ur. ${birth}`;
+  return '';
+}
+
+/**
+ * Data z nagrobku, na którym jest tylko rok („1864r.") — zapisujemy wtedy sam rok
+ * („1864"), żeby nie wyświetlać wymyślonego 1 stycznia.
+ */
+export function isYearOnly(value: string | null | undefined): boolean {
+  return !!value && /^\d{4}$/.test(value);
+}
+
+/** „1 lutego 1900" albo sam rok „1864". */
+export function lifeDate(value: string): string {
+  if (isYearOnly(value)) return value;
+  return new Date(value).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** Pełne daty życia: „1 lutego 1900 – 19 sierpnia 1954", „ur. 22 października 1916", „zm. …". */
+export function lifeSpan(person: Pick<DeceasedPerson, 'birthDate' | 'deathDate'>): string {
+  const birth = person.birthDate ? lifeDate(person.birthDate) : '';
+  const death = person.deathDate ? lifeDate(person.deathDate) : '';
+  if (birth && death) return `${birth} – ${death}`;
+  if (death) return `zm. ${death}`;
   if (birth) return `ur. ${birth}`;
   return '';
 }

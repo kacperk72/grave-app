@@ -26,10 +26,10 @@ import {
   formatDistance,
   graveTitle,
   paymentStatus,
+  lifeSpan,
   personName,
   placeLine,
   pluralPl,
-  yearsRange,
 } from '../../../../shared/utils/grave-display';
 
 @Component({
@@ -65,22 +65,20 @@ export class GraveDetailsPageComponent {
     return g ? graveTitle(g) : '';
   });
 
-  /** „1938 – 2019 · oraz Józef Nowak, 1935 – 2011" */
+  /** Pełne daty życia pierwszej osoby — pod nazwiskiem w tytule. */
   readonly subline = computed(() => {
-    const g = this.grave();
-    if (!g) return '';
-    const [first, ...others] = g.deceasedPersons;
-    const parts: string[] = [];
-    const years = first ? yearsRange(first) : '';
-    if (years) parts.push(years);
-    if (others.length) {
-      const rest = others
-        .map((p) => [personName(p), yearsRange(p)].filter(Boolean).join(', '))
-        .join('; ');
-      parts.push(`oraz ${rest}`);
-    }
-    return parts.join(' · ');
+    const first = this.grave()?.deceasedPersons[0];
+    return first ? lifeSpan(first) : '';
   });
+
+  /** Pozostałe osoby w grobie, każda z datami życia. */
+  readonly others = computed(() =>
+    (this.grave()?.deceasedPersons ?? []).slice(1).map((p) => ({
+      id: p.id,
+      name: personName(p),
+      span: lifeSpan(p),
+    }))
+  );
 
   readonly photos = computed(() => this.grave()?.photos ?? []);
   readonly activePhoto = computed<GravePhoto | undefined>(() => {
