@@ -403,16 +403,4 @@
     max-width: 360px;
   }
 
-  &__demo {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 0;
-    border: none;
-    background: none;
-    color: var(--ink-muted);
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-  }
 }

@@ -197,11 +197,6 @@ export class HomePageComponent {
     return name.replace(/^cmentarz\s+/i, '');
   }
 
-  async generateMockData(): Promise<void> {
-    const loc = this.userLocation();
-    // Bez GPS — okolice Krakowa
-    await this.graveService.generateMockGraves(loc?.lat ?? 50.02704, loc?.lng ?? 19.936453, 8);
-  }
 }
 
 /** „do 14 listopada" albo „termin minął 8 lutego 2024" (rok tylko spoza bieżącego). */
