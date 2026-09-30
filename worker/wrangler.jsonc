@@ -20,11 +20,12 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Zdjęcia grobów (bajty). Kubeł zakłada się raz: `npx wrangler r2 bucket create grave-app-photos`
-  "r2_buckets": [
+  // Zdjęcia grobów (bajty) w Workers KV — darmowy plan bez karty, z twardymi limitami
+  // (1 GB, 1000 zapisów/dzień), więc nie da się wygenerować rachunku.
+  "kv_namespaces": [
     {
       "binding": "PHOTOS",
-      "bucket_name": "grave-app-photos"
+      "id": "f07e01ca2fac486ab366083c2f8f5717"
     }
   ]
   // Lokalnie (`npm run dev`) ALLOWED_ORIGINS nadpisuje flaga --var w package.json

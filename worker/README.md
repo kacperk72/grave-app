@@ -25,11 +25,15 @@ Cloudflare Worker + baza D1. Przechowuje wspólne groby rodziny; aplikacja
 | GET | `/photos/:id?variant=full\|thumb` | pobranie zdjęcia |
 | DELETE | `/photos/:id` | usunięcie obu wariantów |
 
-**Zdjęcia** leżą w kuble R2 `grave-app-photos` pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`.
+**Zdjęcia** leżą w Workers KV `grave-app-photos` pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`.
 Opis zdjęcia (id, które jest główne) jedzie w danych grobu przez `/changes`. Telefon
 zmniejsza zdjęcie przed wysłaniem (1600 px + miniatura 480 px) i trzyma bajty w IndexedDB,
-więc zdjęcia są widoczne bez zasięgu. Kubeł zakłada się raz:
-`npx wrangler r2 bucket create grave-app-photos` (R2 musi być włączone na koncie).
+więc zdjęcia są widoczne bez zasięgu.
+
+KV zamiast R2 świadomie: darmowe KV ma twarde limity (1 GB, 1000 zapisów/dzień) i nie
+wymaga karty, więc żaden błąd ani atak nie wygeneruje rachunku. Worker dodatkowo pilnuje
+limitów sam (900 MB łącznie, 500 MB na mapę, 900 zapisów/dzień — migracja 0002) i zwraca
+zrozumiały komunikat, zanim KV zacznie odrzucać zapisy.
 
 ## Lokalnie
 

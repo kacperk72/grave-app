@@ -14,14 +14,17 @@
  *   GET  /photos/:id      pobranie zdjęcia (?variant=full|thumb)
  *   DELETE /photos/:id    usunięcie obu wariantów
  *
- * Zdjęcia leżą w R2 pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`, więc klucz
- * jednej rodziny nie da dostępu do zdjęć innej. Opis zdjęcia (które, przy jakim
- * grobie) jedzie razem z grobem przez /changes — R2 trzyma same bajty.
+ * Zdjęcia leżą w Workers KV pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`, więc
+ * klucz jednej rodziny nie da dostępu do zdjęć innej. Opis zdjęcia (które, przy jakim
+ * grobie) jedzie razem z grobem przez /changes — KV trzyma same bajty.
+ *
+ * KV zamiast R2 świadomie: na darmowym planie ma twarde limity bez podpinania karty,
+ * więc żaden błąd ani atak nie wygeneruje rachunku — najwyżej zapis się nie uda.
  */
 
 export interface Env {
   DB: D1Database;
-  PHOTOS: R2Bucket;
+  PHOTOS: KVNamespace;
   /** Adresy frontu, które mogą wołać API, rozdzielone przecinkami. */
   ALLOWED_ORIGINS: string;
 }
@@ -48,13 +51,13 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/webp'];
 const PHOTO_VARIANTS = ['full', 'thumb'] as const;
 
-// Bezpiecznik darmowego planu R2 (10 GB, 1 mln zapisów/mies.). Cloudflare nie ma
-// twardego limitu wydatków, więc odmawiamy sami — z zapasem poniżej progu płatności.
-// Odczyty ogranicza sam darmowy plan Workers (100 tys. zapytań/dzień ≈ 3 mln/mies.
-// przy 10 mln darmowych odczytów R2), a usuwanie obiektów w R2 jest bezpłatne.
-const PHOTO_TOTAL_LIMIT_BYTES = 8_000_000_000; // 8 GB dla wszystkich rodzin razem
-const PHOTO_SPACE_LIMIT_BYTES = 1_000_000_000; // 1 GB na jedną rodzinną mapę
-const PHOTO_MONTHLY_WRITE_LIMIT = 900_000; // zapisy do R2 w miesiącu
+// Darmowe KV: 1 GB miejsca, 1000 zapisów i 1000 usunięć dziennie, 100 tys. odczytów.
+// Po przekroczeniu Cloudflare po prostu odrzuca operację (nic nie nalicza), ale wtedy
+// zapis kończy się błędem bez wyjaśnienia — dlatego pilnujemy limitów sami, z zapasem,
+// i zwracamy zrozumiały komunikat.
+const PHOTO_TOTAL_LIMIT_BYTES = 900_000_000; // 900 MB dla wszystkich rodzin razem
+const PHOTO_SPACE_LIMIT_BYTES = 500_000_000; // 500 MB (ok. 800 zdjęć) na jedną rodzinną mapę
+const PHOTO_DAILY_WRITE_LIMIT = 900; // zapisy do KV w ciągu doby (UTC)
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -245,26 +248,29 @@ async function handlePhoto(
     if (body.byteLength > MAX_PHOTO_BYTES) throw new HttpError(413, 'Zdjęcie jest za duże');
 
     await checkPhotoQuota(env, space, key(variant), body.byteLength);
-    await env.PHOTOS.put(key(variant), body, { httpMetadata: { contentType: type } });
+    await env.PHOTOS.put(key(variant), body, { metadata: { contentType: type } });
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO photo_objects (key, space_id, bytes, created_at) VALUES (?, ?, ?, ?)
          ON CONFLICT (key) DO UPDATE SET bytes = excluded.bytes`
       ).bind(key(variant), space.id, body.byteLength, Date.now()),
       env.DB.prepare(
-        `INSERT INTO usage_monthly (month, photo_writes) VALUES (?, 1)
-         ON CONFLICT (month) DO UPDATE SET photo_writes = photo_writes + 1`
-      ).bind(currentMonth()),
+        `INSERT INTO usage_daily (day, photo_writes) VALUES (?, 1)
+         ON CONFLICT (day) DO UPDATE SET photo_writes = photo_writes + 1`
+      ).bind(currentDay()),
     ]);
     return json({ ok: true }, 201);
   }
 
   if (request.method === 'GET') {
-    const object = await env.PHOTOS.get(key(variant));
-    if (!object) throw new HttpError(404, 'Nie ma takiego zdjęcia');
-    return new Response(object.body, {
+    const { value, metadata } = await env.PHOTOS.getWithMetadata<{ contentType?: string }>(
+      key(variant),
+      'stream'
+    );
+    if (!value) throw new HttpError(404, 'Nie ma takiego zdjęcia');
+    return new Response(value, {
       headers: {
-        'Content-Type': object.httpMetadata?.contentType ?? 'image/jpeg',
+        'Content-Type': metadata?.contentType ?? 'image/jpeg',
         // Zdjęcie o danym id nigdy się nie zmienia; „private", bo wymaga klucza rodziny
         'Cache-Control': 'private, max-age=31536000, immutable',
       },
@@ -273,7 +279,7 @@ async function handlePhoto(
 
   if (request.method === 'DELETE') {
     const keys = PHOTO_VARIANTS.map((v) => key(v));
-    await env.PHOTOS.delete(keys);
+    await Promise.all(keys.map((k) => env.PHOTOS.delete(k)));
     await env.DB.prepare(`DELETE FROM photo_objects WHERE key IN (?, ?)`)
       .bind(...keys)
       .run();
@@ -293,25 +299,25 @@ async function checkPhotoQuota(env: Env, space: Space, objectKey: string, bytes:
        (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects) AS total,
        (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects WHERE space_id = ?1) AS space,
        (SELECT COALESCE(bytes, 0) FROM photo_objects WHERE key = ?2) AS existing,
-       (SELECT COALESCE(photo_writes, 0) FROM usage_monthly WHERE month = ?3) AS writes`
+       (SELECT COALESCE(photo_writes, 0) FROM usage_daily WHERE day = ?3) AS writes`
   )
-    .bind(space.id, objectKey, currentMonth())
+    .bind(space.id, objectKey, currentDay())
     .first<{ total: number; space: number; existing: number | null; writes: number | null }>();
 
   const growth = bytes - (row?.existing ?? 0);
-  if ((row?.writes ?? 0) >= PHOTO_MONTHLY_WRITE_LIMIT) {
-    throw new HttpError(429, 'W tym miesiącu wyczerpano limit wysyłania zdjęć. Spróbuj w przyszłym miesiącu.');
+  if ((row?.writes ?? 0) >= PHOTO_DAILY_WRITE_LIMIT) {
+    throw new HttpError(429, 'Na dziś wyczerpano limit wysyłania zdjęć. Zdjęcie wyśle się jutro.');
   }
   if ((row?.space ?? 0) + growth > PHOTO_SPACE_LIMIT_BYTES) {
-    throw new HttpError(507, 'Rodzinna mapa ma już komplet zdjęć (limit 1 GB). Usuń niepotrzebne, aby dodać nowe.');
+    throw new HttpError(507, 'Rodzinna mapa ma już komplet zdjęć (limit 500 MB). Usuń niepotrzebne, aby dodać nowe.');
   }
   if ((row?.total ?? 0) + growth > PHOTO_TOTAL_LIMIT_BYTES) {
     throw new HttpError(507, 'Brak miejsca na nowe zdjęcia w aplikacji. Spróbuj później.');
   }
 }
 
-function currentMonth(): string {
-  return new Date().toISOString().slice(0, 7);
+function currentDay(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function parseChanges(body: unknown): IncomingChange[] {
