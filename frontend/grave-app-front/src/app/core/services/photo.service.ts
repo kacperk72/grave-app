@@ -13,7 +13,7 @@ const THUMB_QUALITY = 0.75;
 
 /**
  * Zdjęcia grobów. Bajty trzymamy w telefonie (IndexedDB), więc zdjęcia są widoczne
- * bez zasięgu; na rodzinnej mapie dodatkowo leżą w R2 i synchronizują się z grobem.
+ * bez zasięgu; na rodzinnej mapie dodatkowo leżą w Workers KV i synchronizują się z grobem.
  * W danych grobu (`grave.photos`) jest tylko opis zdjęcia — id, kolejność, główne.
  */
 @Injectable({ providedIn: 'root' })
