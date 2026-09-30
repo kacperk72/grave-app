@@ -18,6 +18,8 @@ import { IconComponent } from '../../../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../../../shared/components/grave-photo.component';
 import { GravePhoto } from '../../../../shared/models/grave.model';
 import { PhotoService } from '../../../../core/services/photo.service';
+import { PhotoViewerComponent } from '../../../../shared/components/photo-viewer.component';
+import { canGoBackInApp } from '../../../../core/services/navigation';
 import {
   dueLabel,
   formatDate,
@@ -32,7 +34,7 @@ import {
 
 @Component({
   selector: 'app-grave-details-page',
-  imports: [RouterLink, IconComponent, GravePhotoComponent],
+  imports: [RouterLink, IconComponent, GravePhotoComponent, PhotoViewerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './grave-details-page.component.html',
   styleUrl: './grave-details-page.component.scss',
@@ -53,6 +55,7 @@ export class GraveDetailsPageComponent {
   /** null = zdjęcie główne; po kliknięciu miniatury — wybrane. */
   readonly photoIndex = signal<number | null>(null);
   readonly photoBusy = signal(false);
+  readonly viewerOpen = signal(false);
   readonly photoError = signal<string | null>(null);
   readonly visitSaved = signal(false);
   readonly busy = signal(false);
@@ -84,6 +87,12 @@ export class GraveDetailsPageComponent {
     const photos = this.photos();
     const index = this.photoIndex();
     return (index !== null ? photos[index] : undefined) ?? photos.find((p) => p.isPrimary) ?? photos[0];
+  });
+
+  /** Pozycja widocznego zdjęcia na liście — od niej startuje powiększenie. */
+  readonly activeIndex = computed(() => {
+    const active = this.activePhoto();
+    return Math.max(0, this.photos().findIndex((p) => p.id === active?.id));
   });
 
   readonly distance = computed(() => {
@@ -136,7 +145,7 @@ export class GraveDetailsPageComponent {
 
   back(): void {
     // Wejście z linku (bez historii w aplikacji) wraca na Start
-    if (window.history.length > 1) this.location.back();
+    if (canGoBackInApp()) this.location.back();
     else this.router.navigate(['/start']);
   }
 
