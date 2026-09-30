@@ -8,6 +8,7 @@ import {
   input,
   output,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { LeafletModule } from '@asymmetrik/ngx-leaflet';
@@ -95,7 +96,18 @@ export class MapCanvasComponent implements OnDestroy {
     effect(() => this.syncLayer(this.activeLayer()));
     effect(() => this.syncUserPosition(this.userCoords()));
     effect(() => this.syncGraveMarkers(this.graves()));
-    effect(() => this.syncRoute(this.planner.route()));
+    // Trasa rysuje się i dopasowuje widok tylko, gdy zmieni się sama trasa. Wcześniej
+    // efekt czytał też pozycję użytkownika, więc każdy odczyt GPS (co ~1 s) wołał
+    // fitBounds i kasował przybliżenie ustawione palcami podczas nawigacji.
+    effect(() => {
+      const route = this.planner.route();
+      untracked(() => this.syncRoute(route));
+    });
+    // Nowa pozycja tylko przesuwa początek linii trasy — bez zmiany widoku.
+    effect(() => {
+      const coords = this.userCoords();
+      untracked(() => this.updateRouteStart(coords));
+    });
     effect(() => this.syncUserIcon(this.planner.nextWaypoint()));
   }
 
@@ -255,6 +267,18 @@ export class MapCanvasComponent implements OnDestroy {
 
     const bounds = L.latLngBounds(points);
     this.map.fitBounds(bounds, { padding: [60, 60] });
+  }
+
+  private updateRouteStart(coords: GeolocationCoordinates | undefined): void {
+    if (!this.map || !coords) return;
+    if (!this.routeLine) {
+      // Trasa wybrana, zanim był pierwszy odczyt GPS — narysuj ją teraz (raz, z dopasowaniem)
+      if (this.planner.route().length > 0) this.syncRoute(this.planner.route());
+      return;
+    }
+    const points = this.routeLine.getLatLngs() as L.LatLng[];
+    points[0] = L.latLng(coords.latitude, coords.longitude);
+    this.routeLine.setLatLngs(points);
   }
 
   private clearRouteFromMap(): void {
