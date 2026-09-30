@@ -81,6 +81,18 @@
         @if (subline()) {
         <p class="sub">{{ subline() }}</p>
         }
+        @if (others().length) {
+        <ul class="others">
+          @for (person of others(); track person.id) {
+          <li>
+            <span class="others__name">{{ person.name }}</span>
+            @if (person.span) {
+            <span class="others__span">{{ person.span }}</span>
+            }
+          </li>
+          }
+        </ul>
+        }
       </div>
       @if (distance()) {
       <div class="distance">

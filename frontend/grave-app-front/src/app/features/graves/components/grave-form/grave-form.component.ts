@@ -18,6 +18,7 @@ import { DatePickerModule } from 'primeng/datepicker';
 
 import { Grave, CreateGraveDto, UpdateGraveDto } from '../../../../shared/models/grave.model';
 import { parseGoogleMapsLocation } from '../../../../shared/utils/google-maps-location';
+import { isYearOnly } from '../../../../shared/utils/grave-display';
 import { IconComponent, IconName } from '../../../../shared/components/icon.component';
 
 interface GmapsMessage {
@@ -319,16 +320,36 @@ export class GraveFormComponent implements OnInit {
       lastPaymentAmount: formValue.lastPaymentAmount || undefined,
       paymentPeriodMonths: formValue.paymentPeriodMonths || undefined,
       currency: formValue.currency || 'PLN',
-      deceasedPersons: formValue.deceasedPersons.map((person: any) => ({
+      deceasedPersons: formValue.deceasedPersons.map((person: any, index: number) => ({
         firstName: person.firstName,
         lastName: person.lastName,
-        birthDate: person.birthDate ? new Date(person.birthDate).toISOString() : null,
-        deathDate: person.deathDate ? new Date(person.deathDate).toISOString() : null,
+        birthDate: this.keepDate(person.birthDate, this.grave()?.deceasedPersons[index]?.birthDate),
+        deathDate: this.keepDate(person.deathDate, this.grave()?.deceasedPersons[index]?.deathDate),
       })),
     };
 
     this.save.emit(dto);
     this.submitting.set(false);
+  }
+
+  /**
+   * Data z formularza jako ISO. Wyjątek: data z nagrobku z samym rokiem („1864")
+   * zostaje rokiem, dopóki użytkownik jej nie zmieni — kalendarz pokazuje ją jako
+   * 1 stycznia, ale to nie jest prawdziwa data dzienna.
+   */
+  private keepDate(value: Date | string | null, original: string | null | undefined): string | null {
+    if (!value) return null;
+    const date = new Date(value);
+    if (
+      original &&
+      isYearOnly(original) &&
+      date.getFullYear() === Number(original) &&
+      date.getMonth() === 0 &&
+      date.getDate() === 1
+    ) {
+      return original;
+    }
+    return date.toISOString();
   }
 
   onCancel(): void {
