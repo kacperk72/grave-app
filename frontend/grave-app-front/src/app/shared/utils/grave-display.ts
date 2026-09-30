@@ -1,4 +1,4 @@
-import { DeceasedPerson, Grave } from '../models/grave.model';
+import { DeceasedPerson, Grave, GravePhoto } from '../models/grave.model';
 
 /**
  * Wspólne formatowanie danych grobu na potrzeby kart, mapy i szczegółów.
@@ -38,9 +38,8 @@ export function placeLine(grave: Pick<Grave, 'sector' | 'graveNumber'>): string 
   return parts.join(' · ');
 }
 
-export function primaryPhotoUrl(grave: Grave): string | undefined {
-  const primary = grave.photos.find((p) => p.isPrimary) ?? grave.photos[0];
-  return primary?.thumbnailUrl || primary?.url;
+export function primaryPhoto(grave: Grave): GravePhoto | undefined {
+  return grave.photos.find((p) => p.isPrimary) ?? grave.photos[0];
 }
 
 export interface PaymentStatus {

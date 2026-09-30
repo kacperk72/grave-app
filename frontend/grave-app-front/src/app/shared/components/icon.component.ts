@@ -51,7 +51,9 @@ const ICONS = {
     '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16 7l3 3M14 9l2 2"/>',
   logout: '<path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/>',
-  pins: '<path d="M8.5 20.5s-5-4.4-5-8.3a5 5 0 0 1 10 0c0 3.9-5 8.3-5 8.3z"/><circle cx="8.5" cy="12" r="1.8"/><path d="M15.2 15.7c2.3-2.2 4.8-5 4.8-7.5a4.5 4.5 0 0 0-7.9-2.9"/>',
+  camera:
+    '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M8.5 7l1.5-3h4l1.5 3"/><circle cx="12" cy="13.5" r="3.5"/>',
+  pins:'<path d="M8.5 20.5s-5-4.4-5-8.3a5 5 0 0 1 10 0c0 3.9-5 8.3-5 8.3z"/><circle cx="8.5" cy="12" r="1.8"/><path d="M15.2 15.7c2.3-2.2 4.8-5 4.8-7.5a4.5 4.5 0 0 0-7.9-2.9"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

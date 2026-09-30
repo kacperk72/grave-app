@@ -144,7 +144,7 @@
       @for (card of cards(); track card.id) {
       <a class="card" [routerLink]="['/graves', card.id]">
         <div class="card__photo">
-          <app-grave-photo [src]="card.photo" [seed]="card.id" />
+          <app-grave-photo [photo]="card.photo" />
           @if (card.distance) {
           <span class="card__distance">
             <app-icon name="navigate" [size]="14" [stroke]="2" />{{ card.distance }}

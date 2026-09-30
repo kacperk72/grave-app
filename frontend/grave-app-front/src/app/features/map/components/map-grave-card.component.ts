@@ -10,7 +10,7 @@ import {
   graveTitle,
   personName,
   placeLine,
-  primaryPhotoUrl,
+  primaryPhoto,
   yearsRange,
 } from '../../../shared/utils/grave-display';
 
@@ -26,7 +26,7 @@ import {
         <app-icon name="close" [size]="16" />
       </button>
       <div class="card__main">
-        <app-grave-photo class="card__photo" [src]="photo()" [seed]="g.id" />
+        <app-grave-photo class="card__photo" [photo]="photo()" />
         <div class="card__text">
           <h2>{{ title() }}</h2>
           @if (subline()) {
@@ -172,7 +172,7 @@ export class MapGraveCardComponent {
 
   readonly photo = computed(() => {
     const g = this.grave();
-    return g ? primaryPhotoUrl(g) : undefined;
+    return g ? primaryPhoto(g) : undefined;
   });
 
   readonly distance = computed(() => {

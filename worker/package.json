@@ -4,7 +4,7 @@
   "private": true,
   "description": "API rodzinnej mapy GraveMap — Cloudflare Worker + D1",
   "scripts": {
-    "dev": "wrangler dev --port 8791 --var ALLOWED_ORIGINS:http://localhost:4260,http://localhost:4200",
+    "dev": "wrangler dev --port 8791 --var ALLOWED_ORIGINS:http://localhost:4260,http://localhost:4200,http://localhost:4270",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply grave-app --local",

@@ -19,6 +19,14 @@
       "database_id": "b97eb1dc-2a89-43dd-a029-8fc03b735dd7",
       "migrations_dir": "migrations"
     }
+  ],
+  // Zdjęcia grobów (bajty) w Workers KV — darmowy plan bez karty, z twardymi limitami
+  // (1 GB, 1000 zapisów/dzień), więc nie da się wygenerować rachunku.
+  "kv_namespaces": [
+    {
+      "binding": "PHOTOS",
+      "id": "f07e01ca2fac486ab366083c2f8f5717"
+    }
   ]
   // Lokalnie (`npm run dev`) ALLOWED_ORIGINS nadpisuje flaga --var w package.json
 }

@@ -10,10 +10,21 @@
  *   GET  /changes?since=N zmiany po rev N (z usunięciami)
  *   POST /changes         zapis zmian z telefonu
  *   POST /space/rotate    nowy link; stary przestaje działać
+ *   PUT  /photos/:id      zdjęcie grobu (?variant=full|thumb, treść = JPEG/WebP)
+ *   GET  /photos/:id      pobranie zdjęcia (?variant=full|thumb)
+ *   DELETE /photos/:id    usunięcie obu wariantów
+ *
+ * Zdjęcia leżą w Workers KV pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`, więc
+ * klucz jednej rodziny nie da dostępu do zdjęć innej. Opis zdjęcia (które, przy jakim
+ * grobie) jedzie razem z grobem przez /changes — KV trzyma same bajty.
+ *
+ * KV zamiast R2 świadomie: na darmowym planie ma twarde limity bez podpinania karty,
+ * więc żaden błąd ani atak nie wygeneruje rachunku — najwyżej zapis się nie uda.
  */
 
 export interface Env {
   DB: D1Database;
+  PHOTOS: KVNamespace;
   /** Adresy frontu, które mogą wołać API, rozdzielone przecinkami. */
   ALLOWED_ORIGINS: string;
 }
@@ -35,6 +46,18 @@ const MAX_GRAVE_BYTES = 256 * 1024;
 const MAX_GRAVES_PER_SPACE = 5000;
 const PULL_PAGE_SIZE = 500;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+// Telefon zmniejsza zdjęcie przed wysłaniem (ok. 300 KB); limit z zapasem
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const PHOTO_TYPES = ['image/jpeg', 'image/webp'];
+const PHOTO_VARIANTS = ['full', 'thumb'] as const;
+
+// Darmowe KV: 1 GB miejsca, 1000 zapisów i 1000 usunięć dziennie, 100 tys. odczytów.
+// Po przekroczeniu Cloudflare po prostu odrzuca operację (nic nie nalicza), ale wtedy
+// zapis kończy się błędem bez wyjaśnienia — dlatego pilnujemy limitów sami, z zapasem,
+// i zwracamy zrozumiały komunikat.
+const PHOTO_TOTAL_LIMIT_BYTES = 900_000_000; // 900 MB dla wszystkich rodzin razem
+const PHOTO_SPACE_LIMIT_BYTES = 500_000_000; // 500 MB (ok. 800 zdjęć) na jedną rodzinną mapę
+const PHOTO_DAILY_WRITE_LIMIT = 900; // zapisy do KV w ciągu doby (UTC)
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -83,6 +106,10 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method === 'POST' && path === '/changes') {
     return pushChanges(request, env, space);
+  }
+  const photo = path.match(/^\/photos\/([^/]+)$/);
+  if (photo) {
+    return handlePhoto(request, env, space, photo[1], url.searchParams.get('variant'));
   }
   if (request.method === 'POST' && path === '/space/rotate') {
     const token = newToken();
@@ -197,6 +224,102 @@ async function pushChanges(request: Request, env: Env, space: Space): Promise<Re
   return json({ rev });
 }
 
+async function handlePhoto(
+  request: Request,
+  env: Env,
+  space: Space,
+  photoId: string,
+  variantParam: string | null
+): Promise<Response> {
+  if (!ID_PATTERN.test(photoId)) throw new HttpError(400, 'Nieprawidłowy identyfikator zdjęcia');
+  const variant = variantParam ?? 'full';
+  if (!(PHOTO_VARIANTS as readonly string[]).includes(variant)) {
+    throw new HttpError(400, 'Nieznany wariant zdjęcia');
+  }
+  const key = (v: string) => `${space.id}/${photoId}/${v}`;
+
+  if (request.method === 'PUT') {
+    const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim();
+    if (!PHOTO_TYPES.includes(type)) throw new HttpError(415, 'Zdjęcie musi być w formacie JPEG lub WebP');
+    const length = Number(request.headers.get('Content-Length') ?? 0);
+    if (length > MAX_PHOTO_BYTES) throw new HttpError(413, 'Zdjęcie jest za duże');
+    const body = await request.arrayBuffer();
+    if (body.byteLength === 0) throw new HttpError(400, 'Puste zdjęcie');
+    if (body.byteLength > MAX_PHOTO_BYTES) throw new HttpError(413, 'Zdjęcie jest za duże');
+
+    await checkPhotoQuota(env, space, key(variant), body.byteLength);
+    await env.PHOTOS.put(key(variant), body, { metadata: { contentType: type } });
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO photo_objects (key, space_id, bytes, created_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET bytes = excluded.bytes`
+      ).bind(key(variant), space.id, body.byteLength, Date.now()),
+      env.DB.prepare(
+        `INSERT INTO usage_daily (day, photo_writes) VALUES (?, 1)
+         ON CONFLICT (day) DO UPDATE SET photo_writes = photo_writes + 1`
+      ).bind(currentDay()),
+    ]);
+    return json({ ok: true }, 201);
+  }
+
+  if (request.method === 'GET') {
+    const { value, metadata } = await env.PHOTOS.getWithMetadata<{ contentType?: string }>(
+      key(variant),
+      'stream'
+    );
+    if (!value) throw new HttpError(404, 'Nie ma takiego zdjęcia');
+    return new Response(value, {
+      headers: {
+        'Content-Type': metadata?.contentType ?? 'image/jpeg',
+        // Zdjęcie o danym id nigdy się nie zmienia; „private", bo wymaga klucza rodziny
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      },
+    });
+  }
+
+  if (request.method === 'DELETE') {
+    const keys = PHOTO_VARIANTS.map((v) => key(v));
+    await Promise.all(keys.map((k) => env.PHOTOS.delete(k)));
+    await env.DB.prepare(`DELETE FROM photo_objects WHERE key IN (?, ?)`)
+      .bind(...keys)
+      .run();
+    return json({ ok: true });
+  }
+
+  throw new HttpError(405, 'Niedozwolona metoda');
+}
+
+/**
+ * Odmawia zapisu, który przekroczyłby bezpiecznik darmowego planu. Nadpisanie
+ * istniejącego obiektu liczy się jako różnica rozmiarów, nie nowe miejsce.
+ */
+async function checkPhotoQuota(env: Env, space: Space, objectKey: string, bytes: number): Promise<void> {
+  const row = await env.DB.prepare(
+    `SELECT
+       (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects) AS total,
+       (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects WHERE space_id = ?1) AS space,
+       (SELECT COALESCE(bytes, 0) FROM photo_objects WHERE key = ?2) AS existing,
+       (SELECT COALESCE(photo_writes, 0) FROM usage_daily WHERE day = ?3) AS writes`
+  )
+    .bind(space.id, objectKey, currentDay())
+    .first<{ total: number; space: number; existing: number | null; writes: number | null }>();
+
+  const growth = bytes - (row?.existing ?? 0);
+  if ((row?.writes ?? 0) >= PHOTO_DAILY_WRITE_LIMIT) {
+    throw new HttpError(429, 'Na dziś wyczerpano limit wysyłania zdjęć. Zdjęcie wyśle się jutro.');
+  }
+  if ((row?.space ?? 0) + growth > PHOTO_SPACE_LIMIT_BYTES) {
+    throw new HttpError(507, 'Rodzinna mapa ma już komplet zdjęć (limit 500 MB). Usuń niepotrzebne, aby dodać nowe.');
+  }
+  if ((row?.total ?? 0) + growth > PHOTO_TOTAL_LIMIT_BYTES) {
+    throw new HttpError(507, 'Brak miejsca na nowe zdjęcia w aplikacji. Spróbuj później.');
+  }
+}
+
+function currentDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function parseChanges(body: unknown): IncomingChange[] {
   const list = (body as { changes?: unknown })?.changes;
   if (!Array.isArray(list)) throw new HttpError(400, 'Brak listy zmian');
@@ -254,7 +377,7 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   if (!allowed.includes(origin)) return {};
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',

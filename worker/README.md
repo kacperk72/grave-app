@@ -21,6 +21,19 @@ Cloudflare Worker + baza D1. Przechowuje wspólne groby rodziny; aplikacja
 | GET | `/changes?since=N` | zmiany po `rev` N (strony po 500) |
 | POST | `/changes` | do 100 zmian naraz, w jednej transakcji |
 | POST | `/space/rotate` | nowy link, stary przestaje działać |
+| PUT | `/photos/:id?variant=full\|thumb` | bajty zdjęcia (JPEG/WebP, do 5 MB) |
+| GET | `/photos/:id?variant=full\|thumb` | pobranie zdjęcia |
+| DELETE | `/photos/:id` | usunięcie obu wariantów |
+
+**Zdjęcia** leżą w Workers KV `grave-app-photos` pod kluczem `<id mapy>/<id zdjęcia>/<wariant>`.
+Opis zdjęcia (id, które jest główne) jedzie w danych grobu przez `/changes`. Telefon
+zmniejsza zdjęcie przed wysłaniem (1600 px + miniatura 480 px) i trzyma bajty w IndexedDB,
+więc zdjęcia są widoczne bez zasięgu.
+
+KV zamiast R2 świadomie: darmowe KV ma twarde limity (1 GB, 1000 zapisów/dzień) i nie
+wymaga karty, więc żaden błąd ani atak nie wygeneruje rachunku. Worker dodatkowo pilnuje
+limitów sam (900 MB łącznie, 500 MB na mapę, 900 zapisów/dzień — migracja 0002) i zwraca
+zrozumiały komunikat, zanim KV zacznie odrzucać zapisy.
 
 ## Lokalnie
 
