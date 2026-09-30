@@ -25,6 +25,7 @@ import { MapOverlayComponent } from './components/map-overlay.component';
 import { RouteDrawerComponent } from './components/route-drawer.component';
 import { MapGraveCardComponent } from './components/map-grave-card.component';
 import { RoutePlannerService } from './services/route-planner.service';
+import { MapViewStateService } from './services/map-view-state.service';
 
 @Component({
   selector: 'app-map-page',
@@ -44,6 +45,8 @@ import { RoutePlannerService } from './services/route-planner.service';
         [userCoords]="currentCoords()"
         [activeLayer]="activeLayer()"
         [autoCenter]="autoCenter()"
+        [initialView]="initialView"
+        (viewChanged)="viewState.view = $event"
         (graveClick)="onGraveClick($event)"
         (manualDrag)="onManualDrag()"
         (mapReady)="onMapReady()"
@@ -93,14 +96,18 @@ export class MapPageComponent implements OnDestroy {
   private readonly queryParams = toSignal(inject(ActivatedRoute).queryParamMap);
 
   private readonly canvas = viewChild(MapCanvasComponent);
+  protected readonly viewState = inject(MapViewStateService);
+  /** Widok sprzed wyjścia z mapy — odtwarzany raz, przy starcie. */
+  protected readonly initialView = this.viewState.view;
 
   readonly graves = computed(() => this.graveService.graves());
 
   readonly currentCoords = signal<GeolocationCoordinates | undefined>(undefined);
   readonly geoError = signal<string | undefined>(undefined);
 
-  readonly activeLayer = signal<MapLayerKind>('street');
-  readonly autoCenter = signal(true);
+  readonly activeLayer = signal<MapLayerKind>(this.viewState.layer);
+  // Po powrocie na mapę nie przerzucaj jej na użytkownika, jeśli oglądał inne miejsce
+  readonly autoCenter = signal(this.viewState.view ? this.viewState.autoCenter : true);
   readonly isFullscreen = signal(false);
 
   readonly isDrawerOpen = signal(false);
@@ -113,6 +120,22 @@ export class MapPageComponent implements OnDestroy {
   private watchSub?: Subscription;
 
   constructor() {
+    // Zapamiętuj stan mapy na wypadek wyjścia do szczegółów grobu i powrotu
+    effect(() => (this.viewState.autoCenter = this.autoCenter()));
+    effect(() => (this.viewState.layer = this.activeLayer()));
+    effect(() => (this.viewState.selectedGraveId = this.selectedGrave()?.id ?? null));
+
+    // Karta grobu, która była otwarta przed wyjściem z mapy
+    // (jednorazowo — zamknięta później karta nie może wrócić przy kolejnej synchronizacji)
+    let restoreId = this.viewState.selectedGraveId;
+    effect(() => {
+      const graves = this.graves();
+      if (!restoreId || graves.length === 0) return;
+      const grave = graves.find((g) => g.id === restoreId);
+      restoreId = null;
+      if (grave) untracked(() => this.selectedGrave.set(grave));
+    });
+
     effect(() => {
       const coords = this.currentCoords();
       if (!coords) return;

@@ -21,6 +21,7 @@ import 'leaflet.markercluster';
 import { Grave } from '../../../shared/models/grave.model';
 import { MapMarkerFactory } from '../services/map-marker.factory';
 import { RoutePlannerService } from '../services/route-planner.service';
+import { MapView } from '../services/map-view-state.service';
 
 export type MapLayerKind = 'street' | 'satellite';
 
@@ -57,9 +58,12 @@ export class MapCanvasComponent implements OnDestroy {
   userCoords = input<GeolocationCoordinates | undefined>();
   activeLayer = input<MapLayerKind>('street');
   autoCenter = input<boolean>(true);
+  /** Widok do odtworzenia po powrocie na mapę (null = start od pozycji użytkownika). */
+  initialView = input<MapView | null>(null);
 
   graveClick = output<Grave>();
   manualDrag = output<void>();
+  viewChanged = output<MapView>();
   mapReady = output<L.Map>();
 
   private readonly markerFactory = inject(MapMarkerFactory);
@@ -116,7 +120,14 @@ export class MapCanvasComponent implements OnDestroy {
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
     L.control.attribution({ position: 'bottomright', prefix: false }).addTo(map);
 
+    const view = this.initialView();
+    if (view) map.setView([view.lat, view.lng], view.zoom, { animate: false });
+
     map.on('dragstart', () => this.manualDrag.emit());
+    map.on('moveend', () => {
+      const center = map.getCenter();
+      this.viewChanged.emit({ lat: center.lat, lng: center.lng, zoom: map.getZoom() });
+    });
 
     this.syncGraveMarkers(this.graves());
     this.syncUserPosition(this.userCoords());
