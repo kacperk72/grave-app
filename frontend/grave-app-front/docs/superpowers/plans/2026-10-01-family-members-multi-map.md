@@ -40,7 +40,7 @@
 
 Pracuj w `grave-app/worker`. Przed pierwszym testem: `npm install` (jeśli brak `node_modules`) i `npm run db:migrate:local`. Workera uruchamiaj przez `preview_start` z nazwą `grave-app-api` (port 8791) — nie przez Bash.
 
-### Task A1: Podział Workera na moduły + test dymny starego zachowania
+### Task 1 (A1): Podział Workera na moduły + test dymny starego zachowania
 
 **Files:**
 - Create: `worker/src/http.ts`, `worker/src/util.ts`, `worker/scripts/smoke.mjs`
@@ -247,7 +247,7 @@ git add worker/src worker/scripts worker/package.json
 git commit -m "refactor(api): moduły http/util i test dymny starego zachowania"
 ```
 
-### Task A2: Migracja 0003, uwierzytelnianie członków, zakładanie mapy i dołączanie
+### Task 2 (A2): Migracja 0003, uwierzytelnianie członków, zakładanie mapy i dołączanie
 
 **Files:**
 - Create: `worker/migrations/0003_members.sql`, `worker/src/auth.ts`, `worker/src/members.ts`
@@ -760,7 +760,7 @@ git add worker
 git commit -m "feat(api): członkowie rodzinnej mapy — migracja 0003, zaproszenia i dołączanie"
 ```
 
-### Task A3: Zarządzanie członkami i mapą
+### Task 3 (A3): Zarządzanie członkami i mapą
 
 **Files:**
 - Modify: `worker/src/members.ts`, `worker/src/index.ts`, `worker/src/http.ts`, `worker/scripts/smoke.mjs`
@@ -1003,7 +1003,7 @@ git add worker
 git commit -m "feat(api): zarządzanie członkami — role, rotacja zaproszenia, usuwanie mapy"
 ```
 
-### Task A4: Sprzątanie zdjęć skasowanej mapy (Cron) i licznik usunięć
+### Task 4 (A4): Sprzątanie zdjęć skasowanej mapy (Cron) i licznik usunięć
 
 **Files:**
 - Create: `worker/src/purge.ts`
@@ -1138,7 +1138,7 @@ git add worker
 git commit -m "feat(api): sprzątanie zdjęć usuniętej mapy przez Cron z limitem usunięć"
 ```
 
-### Task A5: README Workera i PR
+### Task 5 (A5): README Workera i PR
 
 **Files:**
 - Modify: `worker/README.md`
@@ -1174,7 +1174,7 @@ Treść PR: co się zmienia, zgodność wstecz (stara aplikacja działa bez zmia
 
 Gałąź od `main` po merge'u PR 1 (`git switch main && git pull && git switch -c feature/rodzina-front`); jeśli PR 1 jeszcze czeka — od `feature/rodzina-czlonkowie`. Pracuj w `grave-app/frontend/grave-app-front`. Testy: `npx ng test --watch=false` (całość) albo `npx ng test --watch=false --include <ścieżka spec>`. Build: `npx ng build`. Do E2E: `grave-app-api` (8791) + `grave-app` (`ng serve`, 4260) z `.claude/launch.json`.
 
-### Task B1: Modele map, awatary i paleta
+### Task 6 (B1): Modele map, awatary i paleta
 
 **Files:**
 - Create: `src/app/shared/models/space.model.ts`, `src/app/shared/utils/member-display.ts`, `src/app/shared/utils/member-display.spec.ts`, `src/app/shared/components/avatar.component.ts`
@@ -1598,7 +1598,7 @@ git add src
 git commit -m "feat: model map, awatary członków i paleta kolorów"
 ```
 
-### Task B2: Migracja danych i decyzja o zmianach z serwera (czysta logika)
+### Task 7 (B2): Migracja danych i decyzja o zmianach z serwera (czysta logika)
 
 **Files:**
 - Create: `src/app/shared/utils/space-migration.ts` (+ `.spec.ts`), `src/app/shared/utils/remote-change.ts` (+ `.spec.ts`)
@@ -1780,7 +1780,7 @@ git add src/app/shared/utils
 git commit -m "feat: plan migracji na wiele map i decyzja o zmianach z serwera"
 ```
 
-### Task B3: Przenoszenie i kopiowanie grobu (czysta logika)
+### Task 8 (B3): Przenoszenie i kopiowanie grobu (czysta logika)
 
 **Files:**
 - Create: `src/app/shared/utils/grave-transfer.ts` (+ `.spec.ts`)
@@ -1970,7 +1970,7 @@ git add src/app/shared/utils
 git commit -m "feat: logika przenoszenia i kopiowania grobu między mapami"
 ```
 
-### Task B4: Lokalna baza wielu map i synchronizacja per mapa
+### Task 9 (B4): Lokalna baza wielu map i synchronizacja per mapa
 
 Po tym tasku aplikacja działa jak dziś (obecny UI bez zmian), ale dane są podzielone na mapy, synchronizacja idzie osobno dla każdej mapy, a dołączenie z linku **nie wysyła** grobów z „Moje". Obecne ekrany korzystają z warstwy zgodności w `FamilySyncService` (usuwanej w B6/B7).
 
@@ -3161,7 +3161,7 @@ git add src
 git commit -m "feat: groby i synchronizacja per mapa (Dexie v5), dołączenie nie wysyła grobów"
 ```
 
-### Task B5: Podpis, dołączanie z linku i okienko po aktualizacji
+### Task 10 (B5): Podpis, dołączanie z linku i okienko po aktualizacji
 
 **Files:**
 - Create: `src/app/core/services/profile.ts`, `src/app/shared/components/profile-form.component.ts`, `src/app/features/family/profile-prompt.component.ts`
@@ -3784,7 +3784,7 @@ git add src
 git commit -m "feat: podpis członka, dołączanie z podglądem mapy i okienko po aktualizacji"
 ```
 
-### Task B6: Panel mapy, lista map w Ustawieniach i zakładanie mapy
+### Task 11 (B6): Panel mapy, lista map w Ustawieniach i zakładanie mapy
 
 **Files:**
 - Create: `src/app/features/family/space-page.component.ts`, `.html`, `.scss`; `src/app/features/family/create-space-page.component.ts`; `src/app/shared/utils/sync-status.ts` (+ `.spec.ts`)
@@ -4605,7 +4605,7 @@ git add src
 git commit -m "feat: panel rodzinnej mapy z członkami, lista map i zakładanie mapy"
 ```
 
-### Task B7: Przełącznik map (Start i Mapa)
+### Task 12 (B7): Przełącznik map (Start i Mapa)
 
 **Files:**
 - Create: `src/app/shared/components/space-switcher.component.ts`
@@ -4877,7 +4877,7 @@ git add src
 git commit -m "feat: przełącznik map na Starcie i Mapie"
 ```
 
-### Task B8: Szczegóły grobu — kto zmienił, przenoszenie i kopie, tryb tylko do odczytu
+### Task 13 (B8): Szczegóły grobu — kto zmienił, przenoszenie i kopie, tryb tylko do odczytu
 
 **Files:**
 - Modify: `src/app/core/services/space.service.ts`, `src/app/features/graves/pages/grave-details/grave-details-page.component.ts`, `.html`, `.scss`; `src/app/features/home/home-page.component.ts`, `.html`, `.scss`
@@ -5121,7 +5121,7 @@ git add src
 git commit -m "feat: kto zmienił grób, przenoszenie i kopie między mapami, mapa tylko do odczytu"
 ```
 
-### Task B9: Weryfikacja końcowa, build produkcyjny i PR
+### Task 14 (B9): Weryfikacja końcowa, build produkcyjny i PR
 
 **Files:**
 - Modify: `frontend/grave-app-front/README.md` (sekcja o rodzinnych mapach, jeśli istnieje — inaczej pomiń), `CLAUDE.md` w repo nadrzędnym nie wymaga zmian.

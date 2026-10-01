@@ -22,6 +22,9 @@
  * więc żaden błąd ani atak nie wygeneruje rachunku — najwyżej zapis się nie uda.
  */
 
+import { HttpError, corsHeaders, json, readJson } from './http';
+import { currentDay, newToken, sha256 } from './util';
+
 export interface Env {
   DB: D1Database;
   PHOTOS: KVNamespace;
@@ -40,7 +43,6 @@ interface IncomingChange {
   data: unknown;
 }
 
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_CHANGES_PER_REQUEST = 100;
 const MAX_GRAVE_BYTES = 256 * 1024;
 const MAX_GRAVES_PER_SPACE = 5000;
@@ -61,7 +63,7 @@ const PHOTO_DAILY_WRITE_LIMIT = 900; // zapisy do KV w ciągu doby (UTC)
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const cors = corsHeaders(request, env);
+    const cors = corsHeaders(request, env.ALLOWED_ORIGINS);
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
     }
@@ -72,7 +74,7 @@ export default {
       return response;
     } catch (err) {
       if (err instanceof HttpError) {
-        return json({ error: err.message }, err.status, cors);
+        return json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status, cors);
       }
       console.error(err);
       return json({ error: 'Błąd serwera' }, 500, cors);
@@ -316,10 +318,6 @@ async function checkPhotoQuota(env: Env, space: Space, objectKey: string, bytes:
   }
 }
 
-function currentDay(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function parseChanges(body: unknown): IncomingChange[] {
   const list = (body as { changes?: unknown })?.changes;
   if (!Array.isArray(list)) throw new HttpError(400, 'Brak listy zmian');
@@ -345,57 +343,3 @@ function parseChanges(body: unknown): IncomingChange[] {
   });
 }
 
-async function readJson(request: Request): Promise<unknown> {
-  const length = Number(request.headers.get('Content-Length') ?? 0);
-  if (length > MAX_BODY_BYTES) throw new HttpError(413, 'Za duże zapytanie');
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, 'Za duże zapytanie');
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new HttpError(400, 'Nieprawidłowy JSON');
-  }
-}
-
-/** 32 losowe bajty jako base64url — nie do zgadnięcia, krótkie w linku. */
-function newToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function corsHeaders(request: Request, env: Env): Record<string, string> {
-  const origin = request.headers.get('Origin') ?? '';
-  const allowed = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
-  if (!allowed.includes(origin)) return {};
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    'Access-Control-Max-Age': '86400',
-    Vary: 'Origin',
-  };
-}
-
-function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers },
-  });
-}
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message);
-  }
-}

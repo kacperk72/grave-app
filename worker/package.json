@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply grave-app --local",
-    "db:migrate:remote": "wrangler d1 migrations apply grave-app --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply grave-app --remote",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260929.1",
