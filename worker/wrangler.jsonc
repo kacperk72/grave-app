@@ -25,6 +25,8 @@
   ],
   // Zdjęcia grobów (bajty) w Workers KV — darmowy plan bez karty, z twardymi limitami
   // (1 GB, 1000 zapisów/dzień), więc nie da się wygenerować rachunku.
+  // Raz na dobę: usuwanie z KV zdjęć skasowanych map (src/purge.ts)
+  "triggers": { "crons": ["17 3 * * *"] },
   "kv_namespaces": [
     {
       "binding": "PHOTOS",

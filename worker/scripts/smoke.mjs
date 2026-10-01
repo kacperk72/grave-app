@@ -200,12 +200,34 @@ async function legacyRotate() {
   check('stara aplikacja: wyjście wymaga podpisu (403)', leave.status === 403, leave);
 }
 
+/** Zdjęcia skasowanej mapy znikają z KV przy najbliższym przebiegu Crona. */
+async function purge() {
+  const created = await call('POST', '/spaces', { body: { name: 'Do usunięcia', member: { name: 'Test', color: 'slate' } } });
+  const token = created.data.memberToken;
+  const key = `${created.data.spaceId}/p-purge/full`;
+  const put = await fetch(`${API}/photos/p-purge?variant=full`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg' },
+    body: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+  });
+  check('zdjęcie wgrane', put.status === 201, put.status);
+
+  const del = await call('DELETE', '/space', { token });
+  check('mapa usunięta', del.status === 200, del);
+  check('klucz zdjęcia w kolejce sprzątania', sql(`SELECT COUNT(*) AS n FROM photo_purge WHERE key = '${key}'`) === 1);
+
+  const cron = await fetch(`${API}/__scheduled?cron=17+3+*+*+*`);
+  check('Cron uruchomiony', cron.ok, cron.status);
+  check('kolejka sprzątania pusta', sql(`SELECT COUNT(*) AS n FROM photo_purge WHERE key = '${key}'`) === 0);
+  check('zdjęcie zdjęte z bezpiecznika miejsca', sql(`SELECT COUNT(*) AS n FROM photo_objects WHERE key = '${key}'`) === 0);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
 await management(session);
 await legacyRotate();
-void sql; // używane w Task A4
+await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
 process.exit(failed ? 1 : 0);

@@ -39,6 +39,7 @@ import {
   transferOwner,
   updateMe,
 } from './members';
+import { purgePhotos } from './purge';
 
 export interface Env {
   DB: D1Database;
@@ -91,6 +92,10 @@ export default {
       console.error(err);
       return json({ error: 'Błąd serwera' }, 500, cors);
     }
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await purgePhotos(env);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -274,9 +279,13 @@ async function handlePhoto(
   if (request.method === 'DELETE') {
     const keys = PHOTO_VARIANTS.map((v) => key(v));
     await Promise.all(keys.map((k) => env.PHOTOS.delete(k)));
-    await env.DB.prepare(`DELETE FROM photo_objects WHERE key IN (?, ?)`)
-      .bind(...keys)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM photo_objects WHERE key IN (?, ?)`).bind(...keys),
+      env.DB.prepare(
+        `INSERT INTO usage_daily (day, photo_deletes) VALUES (?1, ?2)
+         ON CONFLICT (day) DO UPDATE SET photo_deletes = photo_deletes + ?2`
+      ).bind(currentDay(), keys.length),
+    ]);
     return json({ ok: true });
   }
 
