@@ -47,7 +47,7 @@ import { Profile } from '../../shared/models/space.model';
       .backdrop {
         position: fixed;
         inset: 0;
-        z-index: 1000;
+        z-index: 1200; // ponad dolną nawigacją (1100)
         background: rgba(0, 0, 0, 0.35);
       }
       .sheet {
@@ -55,7 +55,7 @@ import { Profile } from '../../shared/models/space.model';
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 1001;
+        z-index: 1201;
         max-width: 560px;
         margin: 0 auto;
         padding: 24px 20px calc(20px + env(safe-area-inset-bottom, 0px));

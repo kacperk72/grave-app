@@ -4,7 +4,7 @@ import { IndexedDbService, PhotoVariant } from './indexeddb.service';
 import { ApiError, FamilyApi, OutgoingChange } from './family-api';
 import { SpaceService } from './space.service';
 import { GraveService } from '../../features/graves/services/grave.service';
-import { LocalSpace, credentialOf, isShared } from '../../shared/models/space.model';
+import { LocalSpace, credentialOf } from '../../shared/models/space.model';
 
 export type SyncState = 'off' | 'idle' | 'syncing' | 'offline' | 'error' | 'revoked' | 'removed';
 
@@ -259,26 +259,4 @@ export class FamilySyncService {
   private setStatus(spaceId: string, patch: Partial<SpaceSync>): void {
     this.status.update((all) => ({ ...all, [spaceId]: { ...(all[spaceId] ?? OFF), ...patch } }));
   }
-
-  // --- Zgodność z obecnymi ekranami (Ustawienia, dołączanie, Start) --------
-  // Działa na aktywnej mapie rodzinnej. Usuwane w Task B7.
-
-  private readonly current = computed(() => {
-    const active = this.spaces.activeSpace();
-    return active && isShared(active) ? active : null;
-  });
-  readonly connected = computed(() => !!this.current());
-  readonly state = computed<SyncState>(() => {
-    const c = this.current();
-    return c ? this.syncOf(c.id).state : 'off';
-  });
-  readonly pending = computed(() => {
-    const c = this.current();
-    return c ? this.syncOf(c.id).pending : 0;
-  });
-  readonly errorMessage = computed(() => {
-    const c = this.current();
-    return c ? this.syncOf(c.id).error : null;
-  });
-  readonly lastSyncAt = computed(() => this.current()?.syncedAt ?? null);
 }

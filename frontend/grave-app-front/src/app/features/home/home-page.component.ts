@@ -9,11 +9,11 @@ import {
 import { RouterLink } from '@angular/router';
 
 import { GraveService } from '../graves/services/grave.service';
-import { FamilySyncService } from '../../core/services/family-sync.service';
 import { GeolocationService } from '../../core/services/geolocation.service';
 import { GravePhoto, GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 import { IconComponent } from '../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../shared/components/grave-photo.component';
+import { SpaceSwitcherComponent } from '../../shared/components/space-switcher.component';
 import {
   dueLabel,
   formatDistance,
@@ -45,25 +45,13 @@ const NEAR_RADIUS_M = 5000;
 
 @Component({
   selector: 'app-home-page',
-  imports: [RouterLink, IconComponent, GravePhotoComponent],
+  imports: [RouterLink, IconComponent, GravePhotoComponent, SpaceSwitcherComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './home-page.component.html',
   styleUrl: './home-page.component.scss',
 })
 export class HomePageComponent {
   readonly graveService = inject(GraveService);
-  readonly family = inject(FamilySyncService);
-
-  readonly familyTitle = computed(() => {
-    const pending = this.family.pending();
-    if (this.family.state() === 'offline') {
-      return pending > 0 ? `Bez internetu — ${pending} zmian czeka na wysłanie` : 'Bez internetu';
-    }
-    if (this.family.state() === 'error' || this.family.state() === 'revoked') {
-      return this.family.errorMessage() ?? 'Błąd synchronizacji';
-    }
-    return 'Groby są wspólne dla całej rodziny';
-  });
   private readonly geolocation = inject(GeolocationService);
 
   readonly today = capitalize(

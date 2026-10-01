@@ -1,15 +1,8 @@
 <div class="screen">
   <header class="head">
     <div class="head__text">
-      <span class="date">
-        {{ today }}
-        @if (family.connected()) {
-        <a class="family-chip" routerLink="/settings" [title]="familyTitle()">
-          <span [class]="'family-chip__dot family-chip__dot--' + family.state()"></span>
-          Rodzinna mapa
-        </a>
-        }
-      </span>
+      <span class="date">{{ today }}</span>
+      <app-space-switcher />
       <h1>Twoi bliscy,<br />zawsze blisko</h1>
     </div>
     <a class="round-btn round-btn--dark add-btn" routerLink="/graves/add" aria-label="Dodaj grób">
