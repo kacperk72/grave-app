@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 
 import { IndexedDbService } from './indexeddb.service';
+import { SpaceService } from './space.service';
 import { GraveService } from '../../features/graves/services/grave.service';
 import { parseBackup, partitionByExisting, serializeBackup } from '../../shared/utils/grave-backup';
 
@@ -19,6 +20,7 @@ export interface ImportResult {
 export class BackupService {
   private readonly db = inject(IndexedDbService);
   private readonly graveService = inject(GraveService);
+  private readonly spaces = inject(SpaceService);
 
   /**
    * Serializuje wszystkie groby i udostępnia/pobiera plik.
@@ -26,7 +28,7 @@ export class BackupService {
    * @throws Error gdy brak grobów do eksportu
    */
   async exportGraves(): Promise<number> {
-    const graves = await this.db.getGraves();
+    const graves = await this.db.getGraves(this.spaces.activeSpaceId());
     if (graves.length === 0) {
       throw new Error('Brak grobów do eksportu.');
     }
@@ -59,7 +61,7 @@ export class BackupService {
   }
 
   /**
-   * Wczytuje groby z pliku. `merge` pomija istniejące po id; `replace` czyści bazę.
+   * Wczytuje groby z pliku. `merge` pomija istniejące po id; `replace` czyści groby aktywnej mapy.
    */
   async importGraves(file: File, mode: ImportMode): Promise<ImportResult> {
     const text = await file.text();
@@ -68,25 +70,15 @@ export class BackupService {
       throw new Error(parsed.error);
     }
 
-    let added = 0;
-    let skippedExisting = 0;
-
-    if (mode === 'replace') {
-      await this.db.clearAll();
-      for (const grave of parsed.graves) {
-        await this.db.addGrave(grave);
-      }
-      added = parsed.graves.length;
-    } else {
-      const existing = await this.db.getGraves();
-      const existingIds = new Set(existing.map((g) => g.id));
-      const { toAdd, skippedExisting: skipped } = partitionByExisting(parsed.graves, existingIds);
-      for (const grave of toAdd) {
-        await this.db.addGrave(grave);
-      }
-      added = toAdd.length;
-      skippedExisting = skipped;
+    const spaceId = this.spaces.activeSpaceId();
+    if (mode === 'replace') await this.db.clearAll(spaceId);
+    // Id grobu jest wspólne dla wszystkich map w telefonie — grób z innej mapy pomijamy
+    const existingIds = await this.db.allGraveIds();
+    const { toAdd, skippedExisting } = partitionByExisting(parsed.graves, existingIds);
+    for (const grave of toAdd) {
+      await this.db.addGrave(grave, spaceId);
     }
+    const added = toAdd.length;
 
     await this.graveService.loadGraves();
     return { added, skippedExisting, skippedInvalid: parsed.skippedInvalid };

@@ -1,55 +1,53 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 
-import { environment } from '../../../environments/environment';
-import { IndexedDbService, PhotoVariant, RemoteChange } from './indexeddb.service';
+import { IndexedDbService, PhotoVariant } from './indexeddb.service';
+import { ApiError, FamilyApi, OutgoingChange } from './family-api';
+import { SpaceService } from './space.service';
 import { GraveService } from '../../features/graves/services/grave.service';
+import { LocalSpace, credentialOf, isShared } from '../../shared/models/space.model';
 
-export type SyncState = 'off' | 'idle' | 'syncing' | 'offline' | 'error' | 'revoked';
+export type SyncState = 'off' | 'idle' | 'syncing' | 'offline' | 'error' | 'revoked' | 'removed';
 
-const TOKEN_KEY = 'gravemap-family-token';
-const REV_KEY = 'gravemap-family-rev';
-const SYNCED_AT_KEY = 'gravemap-family-synced-at';
+export interface SpaceSync {
+  state: SyncState;
+  error: string | null;
+  pending: number;
+}
 
 const PUSH_BATCH = 100;
 const PHOTO_BATCH = 10;
 const LOCAL_CHANGE_DELAY_MS = 1500;
 const PERIODIC_SYNC_MS = 60_000;
-
-class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message);
-  }
-}
+const OFF: SpaceSync = { state: 'off', error: null, pending: 0 };
 
 /**
- * Rodzinna mapa: wspólny zbiór grobów na serwerze (Cloudflare D1), do którego
- * dostęp daje sam link. Źródłem prawdy jest serwer; ten telefon trzyma kopię
- * w IndexedDB i kolejkę własnych zmian, które wysyła, gdy jest internet.
- *
- * Cykl synchronizacji: najpierw wyślij kolejkę, potem pobierz zmiany po ostatnim
- * znanym numerze (rev). Groby z niewysłaną zmianą nie są nadpisywane.
+ * Synchronizacja rodzinnych map. Źródłem prawdy jest serwer (Cloudflare D1); telefon trzyma
+ * kopię każdej mapy w IndexedDB i kolejkę własnych zmian. Cykl dla każdej mapy jej kluczem:
+ * zdjęcia → groby → pobranie zmian po ostatnim znanym `rev`. Błąd jednej mapy nie zatrzymuje innych.
  */
 @Injectable({ providedIn: 'root' })
 export class FamilySyncService {
   private readonly db = inject(IndexedDbService);
+  private readonly api = inject(FamilyApi);
+  private readonly spaces = inject(SpaceService);
   private readonly graveService = inject(GraveService);
-  private readonly api = environment.apiUrl;
 
-  readonly token = signal<string | null>(readStorage(TOKEN_KEY));
-  readonly connected = computed(() => !!this.token());
-  readonly state = signal<SyncState>(this.token() ? 'idle' : 'off');
-  readonly lastSyncAt = signal<number | null>(Number(readStorage(SYNCED_AT_KEY)) || null);
-  readonly pending = signal(0);
-  readonly errorMessage = signal<string | null>(null);
+  /** Stan synchronizacji każdej mapy (po lokalnym id). */
+  readonly status = signal<Record<string, SpaceSync>>({});
   /** Zdjęcie odrzucone przez serwer (np. bezpiecznik limitu) — zostaje tylko w tym telefonie. */
   readonly photoWarning = signal<string | null>(null);
 
   private running: Promise<void> | null = null;
   private rerun = false;
   private timer?: ReturnType<typeof setTimeout>;
+
+  /** Zmienia się tylko, gdy mapa dochodzi, znika albo dostaje klucz — nie przy każdym `rev`. */
+  private readonly syncKey = computed(() =>
+    this.spaces
+      .spaces()
+      .map((s) => `${s.id}:${s.status}:${credentialOf(s) ?? ''}`)
+      .join('|')
+  );
 
   constructor() {
     // Każda lokalna zmiana grobu → wyślij po krótkiej chwili (kilka edycji = jedna paczka)
@@ -60,11 +58,18 @@ export class FamilySyncService {
         this.schedule(LOCAL_CHANGE_DELAY_MS);
       });
     });
+    // Nowa mapa (założona, dołączona, podpisana) → synchronizuj od razu
+    effect(() => {
+      this.syncKey();
+      untracked(() => this.schedule(0));
+    });
 
     if (typeof window === 'undefined') return;
     window.addEventListener('online', () => this.sync());
     window.addEventListener('offline', () => {
-      if (this.connected()) this.state.set('offline');
+      for (const space of this.spaces.sharedSpaces()) {
+        if (credentialOf(space)) this.setStatus(space.id, { state: 'offline' });
+      }
     });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') this.sync();
@@ -72,92 +77,18 @@ export class FamilySyncService {
     setInterval(() => {
       if (document.visibilityState === 'visible') this.sync();
     }, PERIODIC_SYNC_MS);
-
-    this.sync();
   }
 
-  /** Link do wysłania rodzinie. Klucz po `#` nie trafia do serwera strony ani logów. */
-  readonly shareLink = computed(() => {
-    const token = this.token();
-    return token ? `${location.origin}/rodzina#${token}` : null;
-  });
-
-  /** Zakłada nową rodzinną mapę i wysyła na nią wszystkie groby z tego telefonu. */
-  async createSpace(): Promise<void> {
-    const res = await this.request<{ token: string }>('POST', '/spaces', undefined, null);
-    this.connect(res.token);
-    await this.db.queueAllGraves();
-    await this.db.queueAllPhotoUploads();
-    await this.sync();
-  }
-
-  /** Podgląd mapy przed dołączeniem — sprawdza też, czy link jest aktualny. */
-  async preview(token: string): Promise<{ graves: number }> {
-    return this.request<{ graves: number }>('GET', '/space', undefined, token);
-  }
-
-  /** Dołącza ten telefon; jego dotychczasowe groby też trafiają na wspólną mapę. */
-  async join(token: string): Promise<void> {
-    if (this.token() !== token) {
-      await this.db.clearOutbox();
-      await this.db.clearPhotoOutbox();
-      this.connect(token);
-    }
-    await this.db.queueAllGraves();
-    await this.db.queueAllPhotoUploads();
-    await this.sync();
-  }
-
-  /** Nowy link; stary przestaje działać na wszystkich telefonach, które go używały. */
-  async rotateLink(): Promise<void> {
-    const res = await this.request<{ token: string }>('POST', '/space/rotate');
-    this.token.set(res.token);
-    writeStorage(TOKEN_KEY, res.token);
-    this.state.set('idle');
-    this.errorMessage.set(null);
-  }
-
-  /** Odłącza ten telefon. Groby zostają na nim jako zwykła, lokalna kopia. */
-  async leave(): Promise<void> {
-    this.token.set(null);
-    this.lastSyncAt.set(null);
-    removeStorage(TOKEN_KEY);
-    removeStorage(REV_KEY);
-    removeStorage(SYNCED_AT_KEY);
-    await this.db.clearOutbox();
-    await this.db.clearPhotoOutbox();
-    this.state.set('off');
-    this.errorMessage.set(null);
-    await this.refreshPending();
-  }
-
-  /** Otwiera systemowe „Udostępnij" z linkiem albo kopiuje go do schowka. */
-  async shareInvite(): Promise<'shared' | 'copied' | 'cancelled'> {
-    const url = this.shareLink();
-    if (!url) return 'cancelled';
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({
-          title: 'Rodzinna mapa grobów',
-          text: 'Dołącz do naszej rodzinnej mapy grobów w GraveMap:',
-          url,
-        });
-        return 'shared';
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
-      }
-    }
-    await navigator.clipboard.writeText(url);
-    return 'copied';
+  syncOf(spaceId: string): SpaceSync {
+    return this.status()[spaceId] ?? OFF;
   }
 
   sync(): Promise<void> {
-    if (!this.token()) return Promise.resolve();
     if (this.running) {
       this.rerun = true;
       return this.running;
     }
-    this.running = this.runSync().finally(() => {
+    this.running = this.runAll().finally(() => {
       this.running = null;
       if (this.rerun) {
         this.rerun = false;
@@ -167,74 +98,88 @@ export class FamilySyncService {
     return this.running;
   }
 
+  /** Bajty zdjęcia z mapy; null, gdy brak klucza, internetu albo zdjęcia. */
+  async fetchPhoto(spaceId: string, photoId: string, variant: PhotoVariant): Promise<Blob | null> {
+    const space = this.spaces.spaces().find((s) => s.id === spaceId);
+    const token = space ? credentialOf(space) : null;
+    if (!token || !navigator.onLine) return null;
+    return this.api.photo(token, photoId, variant);
+  }
+
   private schedule(delayMs: number): void {
-    if (!this.token()) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.sync(), delayMs);
   }
 
-  private async runSync(): Promise<void> {
-    if (!navigator.onLine) {
-      this.state.set('offline');
-      await this.refreshPending();
-      return;
+  private async runAll(): Promise<void> {
+    await this.spaces.ready;
+    let activeTouched = false;
+    for (const space of this.spaces.spaces()) {
+      if (!credentialOf(space)) continue;
+      const touched = await this.runSpace(space);
+      if (touched && space.id === this.spaces.activeSpaceId()) activeTouched = true;
     }
-    this.state.set('syncing');
+    if (activeTouched) await this.graveService.loadGraves();
+    await this.prefetchPhotos();
+    await this.refreshPending();
+  }
+
+  /** Synchronizuje jedną mapę; true, gdy zmieniły się jej groby. */
+  private async runSpace(space: LocalSpace): Promise<boolean> {
+    const token = credentialOf(space)!;
+    if (!navigator.onLine) {
+      this.setStatus(space.id, { state: 'offline', error: null });
+      return false;
+    }
+    this.setStatus(space.id, { state: 'syncing', error: null });
     try {
       // Najpierw bajty zdjęć: gdy inny telefon zobaczy grób z nowym zdjęciem,
       // samo zdjęcie musi już być na serwerze.
-      await this.pushPhotos();
-      await this.push();
-      const changed = await this.pull();
-      if (changed) await this.graveService.loadGraves();
-      await this.prefetchPhotos();
-      const now = Date.now();
-      this.lastSyncAt.set(now);
-      writeStorage(SYNCED_AT_KEY, String(now));
-      this.state.set('idle');
-      this.errorMessage.set(null);
+      await this.pushPhotos(space.id, token);
+      await this.push(space.id, token);
+      const touched = await this.pull(space, token);
+      await this.spaces.update(space.id, { syncedAt: Date.now() });
+      this.setStatus(space.id, { state: 'idle', error: null });
+      return touched;
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        this.state.set('revoked');
-        this.errorMessage.set('Ten link przestał działać — ktoś z rodziny go zmienił. Poproś o nowy.');
+      if (err instanceof ApiError && err.code === 'member_removed') {
+        await this.spaces.update(space.id, { status: 'removed' });
+        this.setStatus(space.id, {
+          state: 'removed',
+          error: `Nie masz już dostępu do mapy „${space.name}".`,
+        });
+      } else if (err instanceof ApiError && err.status === 401) {
+        this.setStatus(space.id, {
+          state: 'revoked',
+          error: 'Ten link przestał działać — poproś założyciela mapy o nowy.',
+        });
       } else if (err instanceof ApiError) {
-        this.state.set('error');
-        this.errorMessage.set(err.message);
+        this.setStatus(space.id, { state: 'error', error: err.message });
       } else {
         // fetch rzuca TypeError, gdy nie ma połączenia z serwerem
-        this.state.set('offline');
+        this.setStatus(space.id, { state: 'offline', error: null });
       }
-    } finally {
-      await this.refreshPending();
+      return false;
     }
   }
 
-  /** Pobiera bajty zdjęcia z rodzinnej mapy; null, gdy telefon nie jest podłączony albo zdjęcia nie ma. */
-  async fetchPhoto(photoId: string, variant: PhotoVariant): Promise<Blob | null> {
-    if (!this.token() || !navigator.onLine) return null;
-    const res = await fetch(`${this.api}/photos/${encodeURIComponent(photoId)}?variant=${variant}`, {
-      headers: { Authorization: `Bearer ${this.token()}` },
-    });
-    if (!res.ok) return null;
-    return res.blob();
-  }
-
-  private async pushPhotos(): Promise<void> {
+  private async pushPhotos(spaceId: string, token: string): Promise<void> {
     for (;;) {
-      const batch = await this.db.getPhotoOutbox(PHOTO_BATCH);
+      const batch = await this.db.getPhotoQueue(spaceId, PHOTO_BATCH);
       if (batch.length === 0) return;
       for (const entry of batch) {
         const path = `/photos/${encodeURIComponent(entry.photoId)}`;
         if (entry.op === 'delete') {
-          await this.send('DELETE', path);
+          await this.api.send('DELETE', path, token);
           continue;
         }
-        const blob = entry.variant ? await this.db.getPhotoBlob(entry.photoId, entry.variant) : undefined;
+        const blob = entry.variant
+          ? await this.db.getPhotoBlob(entry.photoId, entry.variant)
+          : undefined;
         try {
-          if (blob) await this.send('PUT', `${path}?variant=${entry.variant}`, blob);
+          if (blob) await this.api.send('PUT', `${path}?variant=${entry.variant}`, token, blob);
         } catch (err) {
-          // Odmowa na stałe (limit miejsca, format) nie może blokować synchronizacji grobów:
-          // zdjęcie zostaje w tym telefonie, a użytkownik dostaje komunikat.
+          // Odmowa na stałe (limit miejsca, format) nie może blokować synchronizacji grobów
           if (err instanceof ApiError && [413, 415, 429, 507].includes(err.status)) {
             this.photoWarning.set(err.message);
             continue;
@@ -242,23 +187,53 @@ export class FamilySyncService {
           throw err;
         }
       }
-      await this.db.removeFromPhotoOutbox(batch);
+      await this.db.removeFromPhotoQueue(batch);
     }
   }
 
-  /**
-   * Ściąga do telefonu zdjęcia grobów, których jeszcze nie ma — żeby były
-   * widoczne na cmentarzu bez zasięgu. Błąd pojedynczego zdjęcia nie psuje synchronizacji.
-   */
+  private async push(spaceId: string, token: string): Promise<void> {
+    for (;;) {
+      const batch = await this.db.getGraveQueue(spaceId, PUSH_BATCH);
+      if (batch.length === 0) return;
+      const changes: OutgoingChange[] = [];
+      for (const entry of batch) {
+        // Grobu nie ma albo jest już na innej mapie → dla tej mapy to usunięcie
+        const grave =
+          entry.op === 'put' ? await this.db.getGraveForSync(entry.id, spaceId) : undefined;
+        changes.push(
+          grave ? { id: entry.id, deleted: false, data: grave } : { id: entry.id, deleted: true }
+        );
+      }
+      await this.api.push(token, changes);
+      await this.db.removeFromGraveQueue(batch);
+    }
+  }
+
+  private async pull(space: LocalSpace, token: string): Promise<boolean> {
+    let since = space.rev;
+    let touched = false;
+    for (;;) {
+      const res = await this.api.pull(token, since);
+      if (res.changes.length > 0 && (await this.db.applyRemoteChanges(space.id, res.changes))) {
+        touched = true;
+      }
+      since = res.rev;
+      await this.spaces.update(space.id, { rev: since });
+      if (!res.more) return touched;
+    }
+  }
+
+  /** Zdjęcia aktywnej mapy do telefonu — żeby były widoczne na cmentarzu bez zasięgu. */
   private async prefetchPhotos(): Promise<void> {
+    const spaceId = this.spaces.activeSpaceId();
     for (const grave of this.graveService.graves()) {
       for (const photo of grave.photos) {
         if (/^(https?:|data:)/.test(photo.url)) continue;
         for (const variant of ['thumb', 'full'] as const) {
-          if (await this.db.getPhotoBlob(photo.id, variant)) continue;
+          if (await this.db.hasPhotoBlob(photo.id, variant)) continue;
           try {
-            const blob = await this.fetchPhoto(photo.id, variant);
-            if (blob) await this.db.putPhotoBlob(photo.id, variant, blob, false);
+            const blob = await this.fetchPhoto(spaceId, photo.id, variant);
+            if (blob) await this.db.putPhotoBlob(photo.id, variant, blob, null);
           } catch {
             // spróbujemy przy następnej synchronizacji
           }
@@ -267,112 +242,71 @@ export class FamilySyncService {
     }
   }
 
-  private async push(): Promise<void> {
-    for (;;) {
-      const batch = await this.db.getOutbox(PUSH_BATCH);
-      if (batch.length === 0) return;
-
-      const changes = [];
-      for (const entry of batch) {
-        const grave = entry.op === 'put' ? await this.db.getGrave(entry.id) : undefined;
-        changes.push(
-          grave ? { id: entry.id, deleted: false, data: grave } : { id: entry.id, deleted: true }
-        );
-      }
-      await this.request('POST', '/changes', { changes });
-      await this.db.removeFromOutbox(batch);
-    }
-  }
-
-  private async pull(): Promise<boolean> {
-    let since = Number(readStorage(REV_KEY)) || 0;
-    let touched = false;
-    for (;;) {
-      const res = await this.request<{ rev: number; more: boolean; changes: RemoteChange[] }>(
-        'GET',
-        `/changes?since=${since}`
-      );
-      if (res.changes.length > 0 && (await this.db.applyRemoteChanges(res.changes))) {
-        touched = true;
-      }
-      since = res.rev;
-      writeStorage(REV_KEY, String(since));
-      if (!res.more) return touched;
-    }
-  }
-
-  private connect(token: string): void {
-    this.token.set(token);
-    writeStorage(TOKEN_KEY, token);
-    writeStorage(REV_KEY, '0');
-    this.state.set('idle');
-    this.errorMessage.set(null);
-  }
-
   private async refreshPending(): Promise<void> {
-    try {
-      this.pending.set(
-        this.token() ? (await this.db.outboxCount()) + (await this.db.photoOutboxCount()) : 0
-      );
-    } catch {
-      this.pending.set(0);
+    for (const space of this.spaces.sharedSpaces()) {
+      try {
+        this.setStatus(space.id, { pending: await this.db.queueCount(space.id) });
+      } catch {
+        this.setStatus(space.id, { pending: 0 });
+      }
     }
   }
 
-  private async request<T>(
-    method: 'GET' | 'POST',
-    path: string,
-    body?: unknown,
-    token: string | null = this.token()
-  ): Promise<T> {
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
-
-    const res = await fetch(this.api + path, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new ApiError(res.status, (payload as { error?: string }).error ?? 'Błąd serwera');
-    }
-    return payload as T;
+  private setStatus(spaceId: string, patch: Partial<SpaceSync>): void {
+    this.status.update((all) => ({ ...all, [spaceId]: { ...(all[spaceId] ?? OFF), ...patch } }));
   }
 
-  /** Zapytanie z surowym ciałem (bajty zdjęcia) albo bez ciała. */
-  private async send(method: 'PUT' | 'DELETE', path: string, body?: Blob): Promise<void> {
-    const headers: Record<string, string> = { Authorization: `Bearer ${this.token()}` };
-    if (body) headers['Content-Type'] = body.type || 'image/jpeg';
-    const res = await fetch(this.api + path, { method, headers, body });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, (payload as { error?: string }).error ?? 'Błąd serwera');
-    }
-  }
-}
+  // --- Zgodność z obecnymi ekranami (Ustawienia, dołączanie, Start) --------
+  // Działa na aktywnej mapie rodzinnej. Usuwane w Task B5 (preview, join), B6 (reszta akcji)
+  // i B7 (connected, state, pending, errorMessage, lastSyncAt).
 
-function readStorage(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
+  private readonly current = computed(() => {
+    const active = this.spaces.activeSpace();
+    return active && isShared(active) ? active : null;
+  });
+  readonly connected = computed(() => !!this.current());
+  readonly state = computed<SyncState>(() => {
+    const c = this.current();
+    return c ? this.syncOf(c.id).state : 'off';
+  });
+  readonly pending = computed(() => {
+    const c = this.current();
+    return c ? this.syncOf(c.id).pending : 0;
+  });
+  readonly errorMessage = computed(() => {
+    const c = this.current();
+    return c ? this.syncOf(c.id).error : null;
+  });
+  readonly lastSyncAt = computed(() => this.current()?.syncedAt ?? null);
+  readonly token = computed(() => {
+    const c = this.current();
+    return c ? credentialOf(c) : null;
+  });
 
-function writeStorage(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // bez localStorage mapa działa do zamknięcia karty
+  createSpace(): Promise<void> {
+    return this.spaces.createLegacy();
   }
-}
 
-function removeStorage(key: string): void {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // ignore
+  preview(token: string): Promise<{ graves: number }> {
+    return this.api.request('GET', '/space', token);
+  }
+
+  join(token: string): Promise<void> {
+    return this.spaces.addFromInvite(token);
+  }
+
+  async rotateLink(): Promise<void> {
+    const c = this.current();
+    if (c) await this.spaces.rotateInvite(c);
+  }
+
+  async leave(): Promise<void> {
+    const c = this.current();
+    if (c) await this.spaces.forget(c.id, true);
+  }
+
+  async shareInvite(): Promise<'shared' | 'copied' | 'cancelled'> {
+    const c = this.current();
+    return c ? this.spaces.shareInvite(c) : 'cancelled';
   }
 }
