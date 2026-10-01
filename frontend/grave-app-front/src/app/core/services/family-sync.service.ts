@@ -257,7 +257,7 @@ export class FamilySyncService {
   }
 
   // --- Zgodność z obecnymi ekranami (Ustawienia, dołączanie, Start) --------
-  // Działa na aktywnej mapie rodzinnej. Usuwane w Task B5 (preview, join), B6 (reszta akcji)
+  // Działa na aktywnej mapie rodzinnej. Usuwane w Task B6 (akcje)
   // i B7 (connected, state, pending, errorMessage, lastSyncAt).
 
   private readonly current = computed(() => {
@@ -285,14 +285,6 @@ export class FamilySyncService {
 
   createSpace(): Promise<void> {
     return this.spaces.createLegacy();
-  }
-
-  preview(token: string): Promise<{ graves: number }> {
-    return this.api.request('GET', '/space', token);
-  }
-
-  join(token: string): Promise<void> {
-    return this.spaces.addFromInvite(token);
   }
 
   async rotateLink(): Promise<void> {

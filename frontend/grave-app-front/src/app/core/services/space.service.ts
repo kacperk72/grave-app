@@ -1,11 +1,14 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
 import { ACTIVE_SPACE_KEY, IndexedDbService } from './indexeddb.service';
-import { FamilyApi } from './family-api';
+import { FamilyApi, InvitePreview } from './family-api';
+import { writeProfile } from './profile';
 import { readStorage, removeStorage, writeStorage } from './storage';
 import {
   LOCAL_SPACE_ID,
   LocalSpace,
+  Profile,
+  SpaceRole,
   credentialOf,
   isShared,
   newSharedSpace,
@@ -83,20 +86,77 @@ export class SpaceService {
     this.setActive(space.id);
   }
 
-  /** Dołączenie bez podpisu (stary ekran dołączania). Usuwane w Task B5. */
-  async addFromInvite(invite: string): Promise<void> {
-    const existing = this.spaces().find((s) => s.inviteToken === invite && s.status !== 'removed');
-    if (existing) {
-      this.setActive(existing.id);
-      return;
+  preview(invite: string): Promise<InvitePreview> {
+    return this.api.preview(invite);
+  }
+
+  /** Mapa z tego zaproszenia, jeśli telefon już ją zna (także sprzed podpisu). */
+  findForInvite(invite: string, preview: InvitePreview): LocalSpace | null {
+    return (
+      this.spaces().find(
+        (s) => isShared(s) && (s.serverId === preview.spaceId || s.inviteToken === invite)
+      ) ?? null
+    );
+  }
+
+  /**
+   * Dołącza ten telefon do mapy z zaproszenia. Nic nie wysyła — groby z innych map zostają,
+   * gdzie były. Telefon usunięty kiedyś z tej mapy dołącza od nowa i pobiera ją od zera.
+   */
+  async join(invite: string, preview: InvitePreview, profile: Profile): Promise<LocalSpace> {
+    const known = this.findForInvite(invite, preview);
+    if (known && known.status !== 'removed' && known.memberToken) {
+      this.setActive(known.id);
+      return known;
     }
-    const space = newSharedSpace({
-      name: 'Rodzinna mapa',
+    const res = await this.api.join(invite, profile);
+    const fields: Partial<LocalSpace> = {
+      serverId: res.spaceId,
+      name: res.name,
+      memberToken: res.memberToken,
+      memberId: res.memberId,
+      role: res.role,
       inviteToken: invite,
-      status: 'needs-profile',
+      status: 'active',
+    };
+    let id: string;
+    if (known) {
+      id = known.id;
+      // Mapa sprzed podpisu zachowuje rev; po usunięciu z mapy pobieramy wszystko od nowa
+      await this.update(id, known.status === 'removed' ? { ...fields, rev: 0 } : fields);
+    } else {
+      const space = newSharedSpace({ ...fields, name: res.name });
+      id = space.id;
+      await this.add(space);
+    }
+    writeProfile(profile);
+    this.setActive(id);
+    return this.spaces().find((s) => s.id === id)!;
+  }
+
+  /** Podpis na mapie sprzed list członków; zwraca rolę (pierwszy podpisany = założyciel). */
+  async completeProfile(spaceId: string, profile: Profile): Promise<SpaceRole> {
+    const space = this.spaces().find((s) => s.id === spaceId);
+    if (!space?.inviteToken) throw new Error('Ten telefon nie zna linku do tej mapy.');
+    const res = await this.api.join(space.inviteToken, profile);
+    await this.update(spaceId, {
+      serverId: res.spaceId,
+      name: res.name,
+      memberToken: res.memberToken,
+      memberId: res.memberId,
+      role: res.role,
+      status: 'active',
     });
-    await this.add(space);
-    this.setActive(space.id);
+    writeProfile(profile);
+    return res.role;
+  }
+
+  async rename(spaceId: string, name: string): Promise<void> {
+    const space = this.spaces().find((s) => s.id === spaceId);
+    const token = space ? credentialOf(space) : null;
+    if (!token) throw new Error('Brak dostępu do tej mapy');
+    const res = await this.api.rename(token, name);
+    await this.update(spaceId, { name: res.name });
   }
 
   /** Nowy link zaproszenia; dołączeni członkowie działają dalej. */

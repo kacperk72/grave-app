@@ -1,26 +1,30 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 
+import { SpaceService } from '../../core/services/space.service';
 import { FamilySyncService } from '../../core/services/family-sync.service';
-import { GraveService } from '../graves/services/grave.service';
+import { ApiError, InvitePreview } from '../../core/services/family-api';
 import { markOnboardingSeen } from '../../core/services/onboarding';
 import { IconComponent } from '../../shared/components/icon.component';
+import { AvatarStackComponent } from '../../shared/components/avatar.component';
+import { ProfileFormComponent } from '../../shared/components/profile-form.component';
+import { Profile } from '../../shared/models/space.model';
 import { pluralPl } from '../../shared/utils/grave-display';
 
 type View =
   | { kind: 'loading' }
-  | { kind: 'ready'; graves: number }
-  | { kind: 'same' }
+  | { kind: 'ready'; preview: InvitePreview }
+  | { kind: 'same'; name: string }
   | { kind: 'invalid' }
   | { kind: 'offline' };
 
 /**
- * Ekran otwierany z rodzinnego linku `/rodzina#<klucz>`. Klucz czytamy z części
+ * Ekran otwierany z linku zaproszenia `/rodzina#<klucz>`. Klucz czytamy z części
  * po `#` i od razu usuwamy go z paska adresu, żeby nie został w historii.
  */
 @Component({
   selector: 'app-join-family-page',
-  imports: [RouterLink, IconComponent],
+  imports: [RouterLink, IconComponent, AvatarStackComponent, ProfileFormComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="screen">
@@ -28,42 +32,29 @@ type View =
 
       @switch (view().kind) { @case ('loading') {
       <h1>Sprawdzam link…</h1>
-      } @case ('ready') {
-      <h1>Dołącz do rodzinnej mapy</h1>
-      <p class="lead">
-        Na wspólnej mapie {{ remoteText() }}. Zmiany, które ktoś wprowadzi, pojawią się u
-        wszystkich.
-      </p>
-
-      @if (localCount() > 0) {
+      } @case ('ready') { @if (preview(); as p) {
+      <h1>Dołącz do mapy „{{ p.name }}"</h1>
+      <div class="who">
+        <app-avatar-stack [people]="p.members" [max]="5" [size]="32" />
+        <span>{{ membersText() }} · {{ gravesText() }}</span>
+      </div>
       <div class="note">
-        <app-icon name="upload" [size]="20" />
-        <span>
-          {{ localText() }} z tego telefonu też trafi na wspólną mapę. Nic nie zniknie i nic się nie
-          zdubluje.
-        </span>
+        <app-icon name="users" [size]="20" />
+        <span>Twoje groby z innych map nie zostaną wysłane na tę mapę.</span>
       </div>
-      } @if (sync.connected()) {
-      <div class="note note--warn">
-        <app-icon name="alert" [size]="20" />
-        <span>Ten telefon jest w innej rodzinnej mapie. Dołączenie odłączy go od niej.</span>
-      </div>
-      }
-
-      <p class="hint">Każdy, kto ma ten link, widzi te groby i może je zmieniać.</p>
-
-      <div class="actions">
-        <button type="button" class="cta" [disabled]="busy()" (click)="join()">
-          {{ busy() ? 'Dołączam…' : 'Dołącz' }}
-          <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
-        </button>
-        <a class="pill-btn pill-btn--light" routerLink="/start" (click)="skip()">Nie teraz</a>
-      </div>
+      <app-profile-form
+        submitLabel="Dołącz"
+        busyLabel="Dołączam…"
+        nameLabel="Jak cię podpisać w rodzinie?"
+        [busy]="busy()"
+        (submitted)="join($event)"
+      />
+      <a class="pill-btn pill-btn--light skip" routerLink="/start" (click)="skip()">Nie teraz</a>
       @if (error()) {
       <p class="error" role="alert">{{ error() }}</p>
-      } } @case ('same') {
+      } } } @case ('same') {
       <h1>Już jesteś na tej mapie</h1>
-      <p class="lead">Ten telefon korzysta z tego rodzinnego linku.</p>
+      <p class="lead">„{{ sameName() }}" jest już w tym telefonie — przełączyłem na nią.</p>
       <div class="actions">
         <a class="cta" routerLink="/start">
           Przejdź do grobów
@@ -73,7 +64,7 @@ type View =
       } @case ('invalid') {
       <h1>Ten link nie działa</h1>
       <p class="lead">
-        Jest niepełny albo ktoś z rodziny wygenerował już nowy. Poproś o aktualny link.
+        Jest niepełny albo założyciel mapy wygenerował już nowy. Poproś o aktualny link.
       </p>
       <div class="actions">
         <a class="pill-btn pill-btn--light" routerLink="/start" (click)="skip()">Przejdź do aplikacji</a>
@@ -130,6 +121,14 @@ type View =
         color: var(--ink-muted);
       }
 
+      .who {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 14px;
+        color: var(--ink-muted);
+      }
+
       .note {
         display: flex;
         align-items: flex-start;
@@ -143,17 +142,6 @@ type View =
         app-icon {
           margin-top: 1px;
         }
-
-        &--warn {
-          background: var(--candle-tint);
-          color: var(--candle-ink);
-        }
-      }
-
-      .hint {
-        margin: 0;
-        font-size: 13px;
-        color: var(--ink-muted);
       }
 
       .actions {
@@ -167,6 +155,10 @@ type View =
         }
       }
 
+      .skip {
+        height: 56px;
+      }
+
       .error {
         margin: 0;
         color: var(--danger);
@@ -176,8 +168,8 @@ type View =
   ],
 })
 export class JoinFamilyPageComponent {
-  readonly sync = inject(FamilySyncService);
-  private readonly graveService = inject(GraveService);
+  private readonly spaces = inject(SpaceService);
+  private readonly sync = inject(FamilySyncService);
   private readonly router = inject(Router);
 
   private readonly token = readTokenFromUrl();
@@ -186,16 +178,21 @@ export class JoinFamilyPageComponent {
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
 
-  readonly localCount = computed(() => this.graveService.gravesCount());
-  readonly localText = computed(() => {
-    const n = this.localCount();
-    return `${n} ${pluralPl(n, 'grób', 'groby', 'grobów')}`;
-  });
-  readonly remoteText = computed(() => {
+  readonly preview = computed(() => {
     const v = this.view();
-    const n = v.kind === 'ready' ? v.graves : 0;
-    if (n === 0) return 'nie ma jeszcze grobów';
-    return `${pluralPl(n, 'jest', 'są', 'jest')} ${n} ${pluralPl(n, 'grób', 'groby', 'grobów')}`;
+    return v.kind === 'ready' ? v.preview : null;
+  });
+  readonly sameName = computed(() => {
+    const v = this.view();
+    return v.kind === 'same' ? v.name : '';
+  });
+  readonly membersText = computed(() => {
+    const n = this.preview()?.members.length ?? 0;
+    return `${n} ${pluralPl(n, 'osoba', 'osoby', 'osób')}`;
+  });
+  readonly gravesText = computed(() => {
+    const n = this.preview()?.graves ?? 0;
+    return n === 0 ? 'jeszcze bez grobów' : `${n} ${pluralPl(n, 'grób', 'groby', 'grobów')}`;
   });
 
   constructor() {
@@ -207,30 +204,39 @@ export class JoinFamilyPageComponent {
       this.view.set({ kind: 'invalid' });
       return;
     }
-    if (this.sync.token() === this.token) {
-      this.view.set({ kind: 'same' });
-      return;
-    }
     this.view.set({ kind: 'loading' });
     try {
-      const { graves } = await this.sync.preview(this.token);
-      this.view.set({ kind: 'ready', graves });
+      await this.spaces.ready;
+      const preview = await this.spaces.preview(this.token);
+      const known = this.spaces.findForInvite(this.token, preview);
+      if (known && known.status === 'active') {
+        this.spaces.setActive(known.id);
+        markOnboardingSeen();
+        this.view.set({ kind: 'same', name: known.name });
+        return;
+      }
+      this.view.set({ kind: 'ready', preview });
     } catch (err) {
-      const status = (err as { status?: number }).status;
-      this.view.set({ kind: status === 401 ? 'invalid' : 'offline' });
+      this.view.set({ kind: err instanceof ApiError && err.status === 401 ? 'invalid' : 'offline' });
     }
   }
 
-  async join(): Promise<void> {
-    if (!this.token || this.busy()) return;
+  async join(profile: Profile): Promise<void> {
+    const preview = this.preview();
+    if (!this.token || !preview || this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
     try {
-      await this.sync.join(this.token);
+      await this.spaces.join(this.token, preview, profile);
+      this.sync.sync();
       markOnboardingSeen();
       this.router.navigate(['/start'], { replaceUrl: true });
-    } catch {
-      this.error.set('Nie udało się dołączyć. Sprawdź internet i spróbuj ponownie.');
+    } catch (err) {
+      this.error.set(
+        err instanceof ApiError && err.status !== 401
+          ? err.message
+          : 'Nie udało się dołączyć. Sprawdź internet i spróbuj ponownie.'
+      );
     } finally {
       this.busy.set(false);
     }
