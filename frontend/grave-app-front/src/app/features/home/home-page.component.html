@@ -1,21 +1,30 @@
 <div class="screen">
   <header class="head">
     <div class="head__text">
-      <span class="date">
-        {{ today }}
-        @if (family.connected()) {
-        <a class="family-chip" routerLink="/settings" [title]="familyTitle()">
-          <span [class]="'family-chip__dot family-chip__dot--' + family.state()"></span>
-          Rodzinna mapa
-        </a>
-        }
-      </span>
+      <span class="date">{{ today }}</span>
+      <app-space-switcher />
       <h1>Twoi bliscy,<br />zawsze blisko</h1>
     </div>
+    @if (!spaces.readOnly()) {
     <a class="round-btn round-btn--dark add-btn" routerLink="/graves/add" aria-label="Dodaj grób">
       <app-icon name="plus" />
     </a>
+    }
   </header>
+
+  @if (spaces.readOnly()) {
+  <div class="removed" role="status">
+    <p>Nie masz już dostępu do mapy „{{ spaces.activeSpace()?.name }}". Groby są tylko do odczytu.</p>
+    <div class="removed__actions">
+      <button type="button" class="pill-btn pill-btn--dark" (click)="forgetRemoved(true)">
+        Zachowaj w „Moje"
+      </button>
+      <button type="button" class="pill-btn pill-btn--light" (click)="forgetRemoved(false)">
+        Usuń z telefonu
+      </button>
+    </div>
+  </div>
+  }
 
   <div class="search-row">
     <label class="search">
@@ -122,10 +131,12 @@
       Stań przy nagrobku i zapisz jego położenie. Następnym razem aplikacja zaprowadzi cię prosto
       na miejsce.
     </p>
+    @if (!spaces.readOnly()) {
     <a class="cta" routerLink="/graves/add">
       Dodaj grób
       <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
     </a>
+    }
   </section>
   } @else {
   <section class="section">

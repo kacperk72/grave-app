@@ -43,31 +43,24 @@
 }
 
 // Znacznik rodzinnej mapy obok daty; kropka pokazuje stan synchronizacji
-.family-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink);
-  text-decoration: none;
+.removed {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: var(--radius-md);
+  background: var(--danger-tint);
+  color: var(--danger);
+  font-size: 14px;
 
-  &__dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--radius-pill);
-    background: var(--ok);
+  p {
+    margin: 0;
+  }
 
-    &--syncing {
-      background: var(--locate);
-    }
-
-    &--offline {
-      background: var(--ink-faint);
-    }
-
-    &--error,
-    &--revoked {
-      background: var(--danger);
-    }
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
 

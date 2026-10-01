@@ -1,0 +1,85 @@
+// Wiersze, karty, `status`, `tag` i `replace-link` przychodzą ze stylów Ustawień
+.head {
+  gap: 10px;
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--stone);
+  }
+}
+
+.rename {
+  display: flex;
+  gap: 8px;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 18px;
+  }
+}
+
+.member .row__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-menu {
+  padding: 4px 10px 12px 62px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .danger {
+    color: var(--danger);
+  }
+}
+
+.me-form {
+  padding: 10px;
+}
+
+.empty {
+  margin: 0;
+  padding: 14px;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+
+.exit {
+  padding: 16px;
+  gap: 10px;
+
+  &__text {
+    margin: 0 0 4px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+}

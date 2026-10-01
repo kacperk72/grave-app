@@ -2,6 +2,8 @@ import { Injectable, inject } from '@angular/core';
 
 import { IndexedDbService, PhotoVariant } from './indexeddb.service';
 import { FamilySyncService } from './family-sync.service';
+import { SpaceService } from './space.service';
+import { LOCAL_SPACE_ID } from '../../shared/models/space.model';
 import { GraveService } from '../../features/graves/services/grave.service';
 import { GravePhoto } from '../../shared/models/grave.model';
 
@@ -21,6 +23,7 @@ export class PhotoService {
   private readonly db = inject(IndexedDbService);
   private readonly family = inject(FamilySyncService);
   private readonly graveService = inject(GraveService);
+  private readonly spaces = inject(SpaceService);
 
   /** Adresy `blob:` już wczytanych zdjęć — żeby nie czytać ich z bazy przy każdym widoku. */
   private readonly urls = new Map<string, string>();
@@ -41,8 +44,11 @@ export class PhotoService {
     const load = (async () => {
       let blob = await this.db.getPhotoBlob(photo.id, variant);
       if (!blob) {
-        blob = (await this.family.fetchPhoto(photo.id, variant).catch(() => null)) ?? undefined;
-        if (blob) await this.db.putPhotoBlob(photo.id, variant, blob, false);
+        blob =
+          (await this.family
+            .fetchPhoto(this.spaces.activeSpaceId(), photo.id, variant)
+            .catch(() => null)) ?? undefined;
+        if (blob) await this.db.putPhotoBlob(photo.id, variant, blob, null);
       }
       // Miniatury jeszcze nie ma (np. tuż po dodaniu na innym telefonie) — pokaż pełne
       if (!blob && variant === 'thumb') return this.url(photo, 'full');
@@ -66,9 +72,10 @@ export class PhotoService {
       resize(file, THUMB_MAX_PX, THUMB_QUALITY),
     ]);
     const photoId = crypto.randomUUID();
+    const spaceId = (await this.db.getGraveSpaceId(graveId)) ?? LOCAL_SPACE_ID;
     // Najpierw bajty, potem wpis w grobie — synchronizacja wyśle je w tej kolejności
-    await this.db.putPhotoBlob(photoId, 'full', full, true);
-    await this.db.putPhotoBlob(photoId, 'thumb', thumb, true);
+    await this.db.putPhotoBlob(photoId, 'full', full, spaceId);
+    await this.db.putPhotoBlob(photoId, 'thumb', thumb, spaceId);
 
     const photo: GravePhoto = {
       id: photoId,
@@ -91,7 +98,7 @@ export class PhotoService {
       photos = photos.map((p, i) => ({ ...p, isPrimary: i === 0 }));
     }
     await this.db.updateGrave(graveId, { photos });
-    await this.db.deletePhoto(photoId);
+    await this.db.deletePhoto(photoId, (await this.db.getGraveSpaceId(graveId)) ?? LOCAL_SPACE_ID);
     for (const variant of ['full', 'thumb']) {
       const url = this.urls.get(`${photoId}:${variant}`);
       if (url) URL.revokeObjectURL(url);

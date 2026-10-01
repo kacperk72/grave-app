@@ -63,6 +63,18 @@ export const routes: Routes = [
       import('./features/settings/settings-page.component').then((m) => m.SettingsPageComponent),
   },
   {
+    path: 'mapy/nowa',
+    loadComponent: () =>
+      import('./features/family/create-space-page.component').then(
+        (m) => m.CreateSpacePageComponent
+      ),
+  },
+  {
+    path: 'mapy/:id',
+    loadComponent: () =>
+      import('./features/family/space-page.component').then((m) => m.SpacePageComponent),
+  },
+  {
     path: '**',
     redirectTo: 'start',
   },

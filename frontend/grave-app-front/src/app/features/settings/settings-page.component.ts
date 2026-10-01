@@ -1,9 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 import { ThemePreference, ThemeService } from '../../core/services/theme.service';
 import { BackupService, ImportMode } from '../../core/services/backup.service';
 import { GraveService } from '../graves/services/grave.service';
 import { FamilySyncService } from '../../core/services/family-sync.service';
+import { SpaceService } from '../../core/services/space.service';
+import { AvatarStackComponent } from '../../shared/components/avatar.component';
+import { LOCAL_SPACE_ID } from '../../shared/models/space.model';
+import { syncStatusText } from '../../shared/utils/sync-status';
 import { IconComponent, IconName } from '../../shared/components/icon.component';
 import { pluralPl } from '../../shared/utils/grave-display';
 
@@ -15,7 +20,7 @@ interface StatusMessage {
 
 @Component({
   selector: 'app-settings-page',
-  imports: [IconComponent],
+  imports: [IconComponent, RouterLink, AvatarStackComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './settings-page.component.html',
   styleUrl: './settings-page.component.scss',
@@ -26,28 +31,23 @@ export class SettingsPageComponent {
   readonly graveService = inject(GraveService);
   readonly family = inject(FamilySyncService);
 
-  readonly familyBusy = signal(false);
-  readonly familyNote = signal<StatusMessage | null>(null);
+  readonly spaces = inject(SpaceService);
 
-  /** Jedna linijka stanu rodzinnej mapy pod jej nazwą. */
-  readonly familyStatus = computed(() => {
-    const pending = this.family.pending();
-    const pendingText = `${pending} ${pluralPl(pending, 'zmiana czeka', 'zmiany czekają', 'zmian czeka')}`;
-    switch (this.family.state()) {
-      case 'syncing':
-        return 'Synchronizuję…';
-      case 'offline':
-        return pending > 0 ? `Bez internetu · ${pendingText}` : 'Bez internetu';
-      case 'error':
-      case 'revoked':
-        return this.family.errorMessage() ?? 'Błąd synchronizacji';
-      default: {
-        const at = this.family.lastSyncAt();
-        const when = at ? `Zsynchronizowano ${relativeTime(at)}` : 'Połączono';
-        return pending > 0 ? `${when} · ${pendingText}` : when;
-      }
-    }
-  });
+  /** Rodzinne mapy w tym telefonie — wiersze listy z nazwą, stanem i awatarami. */
+  readonly mapRows = computed(() =>
+    this.spaces.sharedSpaces().map((s) => {
+      const sync = this.family.syncOf(s.id);
+      return {
+        id: s.id,
+        name: s.name,
+        active: s.id === this.spaces.activeSpaceId(),
+        people: this.spaces.members()[s.id] ?? [],
+        status:
+          s.status === 'needs-profile' ? 'Czeka na twój podpis' : syncStatusText(sync, s.syncedAt),
+        error: ['error', 'revoked', 'removed'].includes(sync.state),
+      };
+    })
+  );
 
   readonly themeOptions: { value: ThemePreference; label: string }[] = [
     { value: 'light', label: 'Jasny' },
@@ -115,9 +115,11 @@ export class SettingsPageComponent {
     if (!file) return;
 
     if (this.pendingMode === 'replace') {
-      const scope = this.family.connected()
-        ? ' Dotyczy całej rodzinnej mapy — groby znikną też u pozostałych osób.'
-        : '';
+      const active = this.spaces.activeSpace();
+      const scope =
+        active && active.id !== LOCAL_SPACE_ID
+          ? ` Dotyczy całej mapy „${active.name}" — groby znikną też u pozostałych osób.`
+          : '';
       const confirmed = confirm(
         `Zastąpić wszystkie obecne groby zawartością pliku? Obecne dane zostaną usunięte i nie można tego cofnąć.${scope}`
       );
@@ -146,77 +148,7 @@ export class SettingsPageComponent {
     }
   }
 
-  async createFamily(): Promise<void> {
-    await this.runFamilyAction(async () => {
-      await this.family.createSpace();
-      this.familyNote.set({
-        type: 'success',
-        icon: 'check',
-        text: 'Rodzinna mapa gotowa. Wyślij link bliskim, żeby do niej dołączyli.',
-      });
-    }, 'Nie udało się utworzyć mapy. Sprawdź internet i spróbuj ponownie.');
-  }
-
-  async shareFamily(): Promise<void> {
-    await this.runFamilyAction(async () => {
-      const result = await this.family.shareInvite();
-      if (result === 'copied') {
-        this.familyNote.set({
-          type: 'success',
-          icon: 'check',
-          text: 'Link skopiowany — wklej go w wiadomości do rodziny.',
-        });
-      }
-    }, 'Nie udało się udostępnić linku.');
-  }
-
-  async rotateFamilyLink(): Promise<void> {
-    const ok = confirm(
-      'Wygenerować nowy link? Stary przestanie działać — osoby, które go używają, będą potrzebowały nowego.'
-    );
-    if (!ok) return;
-    await this.runFamilyAction(async () => {
-      await this.family.rotateLink();
-      this.familyNote.set({
-        type: 'success',
-        icon: 'check',
-        text: 'Nowy link gotowy. Wyślij go osobom, które mają mieć dostęp.',
-      });
-    }, 'Nie udało się zmienić linku. Sprawdź internet.');
-  }
-
-  async leaveFamily(): Promise<void> {
-    const pending = this.family.pending();
-    const warning = pending > 0 ? ` ${pending} niewysłanych zmian nie trafi do rodziny.` : '';
-    const ok = confirm(`Odłączyć ten telefon od rodzinnej mapy? Groby zostaną na nim jako kopia.${warning}`);
-    if (!ok) return;
-    await this.family.leave();
-    this.familyNote.set(null);
-  }
-
-  private async runFamilyAction(action: () => Promise<void>, errorText: string): Promise<void> {
-    this.familyBusy.set(true);
-    this.familyNote.set(null);
-    try {
-      await action();
-    } catch {
-      this.familyNote.set({ type: 'error', icon: 'alert', text: errorText });
-    } finally {
-      this.familyBusy.set(false);
-    }
-  }
-
   private grobyWord(n: number): string {
     return pluralPl(n, 'grób', 'groby', 'grobów');
   }
-}
-
-function relativeTime(ts: number): string {
-  const diffMin = Math.round((Date.now() - ts) / 60_000);
-  if (diffMin < 1) return 'przed chwilą';
-  if (diffMin < 60) return `${diffMin} min temu`;
-  const date = new Date(ts);
-  const time = date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
-  if (date.toDateString() === new Date().toDateString()) return `dziś o ${time}`;
-  return `${date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${time}`;
 }

@@ -4,14 +4,16 @@ import { DecimalPipe } from '@angular/common';
 import { RoutePlannerService } from '../services/route-planner.service';
 import { MapLayerKind } from './map-canvas.component';
 import { IconComponent } from '../../../shared/components/icon.component';
+import { SpaceSwitcherComponent } from '../../../shared/components/space-switcher.component';
 
 @Component({
   selector: 'app-map-overlay',
-  imports: [DecimalPipe, IconComponent],
+  imports: [DecimalPipe, IconComponent, SpaceSwitcherComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!-- Stan GPS + wskazówka do następnego grobu -->
     <div class="overlay overlay-top-left">
+      <app-space-switcher />
       @if (userCoords(); as coords) {
       <span class="status-pill" title="Dokładność GPS">
         <span [class]="'dot dot--' + severityFor(coords.accuracy)"></span>

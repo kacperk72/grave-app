@@ -21,6 +21,9 @@ export interface GravePhoto {
   uploadedAt: string;
 }
 
+/** Wariant bajtów zdjęcia: pełne (1600 px) albo miniatura (480 px). */
+export type PhotoVariant = 'full' | 'thumb';
+
 export interface Grave {
   id: string;
   latitude: number;
@@ -45,6 +48,8 @@ export interface Grave {
   createdAt: string;
   updatedAt: string;
   lastVisited?: string;
+  /** Id członka rodzinnej mapy, który ostatnio zapisał grób — nadaje serwer. */
+  updatedBy?: string | null;
 }
 
 export interface CreateGraveDto {

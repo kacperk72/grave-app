@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { RouterOutlet } from '@angular/router';
 
 import { BottomNavComponent } from './layout/bottom-nav/bottom-nav.component';
+import { ProfilePromptComponent } from './features/family/profile-prompt.component';
 import { ThemeService } from './core/services/theme.service';
 import { AppUpdateService } from './core/services/app-update.service';
 import { FamilySyncService } from './core/services/family-sync.service';
@@ -10,7 +11,7 @@ import { injectCurrentUrl } from './core/services/current-url';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, BottomNavComponent],
+  imports: [RouterOutlet, BottomNavComponent, ProfilePromptComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './app.html',
   styleUrl: './app.scss',
@@ -29,6 +30,17 @@ export class App {
   // i nie pokazują dolnej nawigacji.
   readonly showNav = computed(() => {
     const p = this.path();
-    return !(p.startsWith('/welcome') || p.startsWith('/graves/') || p.startsWith('/rodzina'));
+    return !(
+      p.startsWith('/welcome') ||
+      p.startsWith('/graves/') ||
+      p.startsWith('/rodzina') ||
+      p.startsWith('/mapy/')
+    );
+  });
+
+  // Okienko podpisu nie przeszkadza w powitaniu ani w dołączaniu z linku
+  readonly showPrompt = computed(() => {
+    const p = this.path();
+    return !(p.startsWith('/welcome') || p.startsWith('/rodzina'));
   });
 }

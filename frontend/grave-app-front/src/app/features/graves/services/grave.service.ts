@@ -1,10 +1,11 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, effect, inject, untracked } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, from } from 'rxjs';
 import { tap, map } from 'rxjs/operators';
 import { getDistance, getRhumbLineBearing } from 'geolib';
 
 import { IndexedDbService } from '../../../core/services/indexeddb.service';
+import { SpaceService } from '../../../core/services/space.service';
 import {
   Grave,
   GraveWithDistance,
@@ -17,6 +18,8 @@ import {
   providedIn: 'root',
 })
 export class GraveService {
+  private readonly spaces = inject(SpaceService);
+
   // Signals dla reactive state
   graves = signal<Grave[]>([]);
   isLoading = signal(false);
@@ -26,6 +29,8 @@ export class GraveService {
 
   // Computed values
   gravesCount = computed(() => this.graves().length);
+  /** Aktywna mapa jest tylko do odczytu (usunięto z niej ten telefon). */
+  readonly readOnly = computed(() => this.spaces.readOnly());
 
   filteredGraves = computed(() => {
     const query = this.searchQuery().toLowerCase();
@@ -49,7 +54,11 @@ export class GraveService {
   });
 
   constructor(private readonly db: IndexedDbService, private readonly http: HttpClient) {
-    this.loadGraves();
+    // Zmiana aktywnej mapy (także po migracji przy starcie) → wczytaj jej groby
+    effect(() => {
+      this.spaces.activeSpaceId();
+      untracked(() => this.loadGraves());
+    });
   }
 
   /**
@@ -60,7 +69,7 @@ export class GraveService {
     this.error.set(null);
 
     try {
-      const graves = await this.db.getGraves();
+      const graves = await this.db.getGraves(this.spaces.activeSpaceId());
       this.graves.set(graves);
     } catch (error) {
       console.error('Error loading graves from DB', error);
@@ -81,6 +90,7 @@ export class GraveService {
    * Dodaje nowy grób
    */
   async addGrave(dto: CreateGraveDto): Promise<Grave> {
+    this.assertWritable();
     const newGrave: Grave = {
       id: crypto.randomUUID(),
       ...dto,
@@ -100,7 +110,7 @@ export class GraveService {
       person.graveId = newGrave.id;
     });
 
-    await this.db.addGrave(newGrave);
+    await this.db.addGrave(newGrave, this.spaces.activeSpaceId());
     await this.loadGraves();
 
     // TODO: Sync with backend
@@ -111,6 +121,7 @@ export class GraveService {
    * Aktualizuje istniejący grób
    */
   async updateGrave(id: string, dto: UpdateGraveDto): Promise<void> {
+    this.assertWritable();
     const existingGrave = await this.getGrave(id);
     if (!existingGrave) {
       throw new Error('Grób nie znaleziony');
@@ -151,6 +162,7 @@ export class GraveService {
    * Usuwa grób
    */
   async deleteGrave(id: string): Promise<void> {
+    this.assertWritable();
     await this.db.deleteGrave(id);
     await this.loadGraves();
 
@@ -258,5 +270,10 @@ export class GraveService {
    */
   setSortBy(sortBy: SortOption): void {
     this.sortBy.set(sortBy);
+  }
+
+  /** Mapa, z której usunięto ten telefon, jest tylko do odczytu. */
+  private assertWritable(): void {
+    if (this.spaces.readOnly()) throw new Error('Ta mapa jest tylko do odczytu');
   }
 }
