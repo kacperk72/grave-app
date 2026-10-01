@@ -140,10 +140,72 @@ async function legacyOwner(token) {
   check('stara mapa: klucz z linku nadal działa (przejściowo)', stillLegacy.status === 200, stillLegacy);
 }
 
+/** Uprawnienia założyciela, rotacja linku, usuwanie i przekazanie roli, usunięcie mapy. */
+async function management(s) {
+  const list = await call('GET', '/members', { token: s.ania });
+  check('lista członków, założyciel pierwszy', list.status === 200 && list.data.members.length === 2 && list.data.members[0].role === 'owner', list);
+
+  const me = await call('PATCH', '/me', { token: s.ania, body: { name: 'Anna', color: 'plum' } });
+  check('zmiana podpisu', me.status === 200 && me.data.name === 'Anna' && me.data.color === 'plum', me);
+
+  const notOwner = await call('POST', '/space/rotate', { token: s.ania });
+  check('rotacja przez członka: 403', notOwner.status === 403, notOwner);
+  const renameByMember = await call('PATCH', '/space', { token: s.ania, body: { name: 'X' } });
+  check('zmiana nazwy przez członka: 403', renameByMember.status === 403, renameByMember);
+
+  const renamed = await call('PATCH', '/space', { token: s.owner, body: { name: 'Kubitowie' } });
+  check('zmiana nazwy przez założyciela', renamed.status === 200 && renamed.data.name === 'Kubitowie', renamed);
+
+  const rotated = await call('POST', '/space/rotate', { token: s.owner });
+  check('nowy link zaproszenia', rotated.status === 200 && rotated.data.invite && rotated.data.invite !== s.invite, rotated);
+  const oldInvite = await call('GET', '/invite', { token: s.invite });
+  check('stary link nie działa', oldInvite.status === 401, oldInvite);
+  const stillMember = await call('GET', '/changes?since=0', { token: s.ania });
+  check('członek działa po zmianie linku', stillMember.status === 200, stillMember);
+
+  const selfRemove = await call('DELETE', `/members/${s.ownerId}`, { token: s.owner });
+  check('założyciel nie usuwa siebie: 400', selfRemove.status === 400, selfRemove);
+  const ownerLeave = await call('POST', '/space/leave', { token: s.owner });
+  check('założyciel nie wychodzi bez przekazania roli: 409', ownerLeave.status === 409, ownerLeave);
+
+  const transferred = await call('POST', `/members/${s.aniaId}/owner`, { token: s.owner });
+  check('przekazanie roli', transferred.status === 200, transferred);
+  const newOwner = await call('GET', '/space', { token: s.ania });
+  check('nowa założycielka', newOwner.data?.me?.role === 'owner', newOwner);
+
+  const busy = await call('DELETE', '/space', { token: s.ania });
+  check('usunięcie mapy z innymi osobami: 409', busy.status === 409, busy);
+
+  const removed = await call('DELETE', `/members/${s.ownerId}`, { token: s.ania });
+  check('usunięcie członka', removed.status === 200, removed);
+  const gone = await call('GET', '/changes?since=0', { token: s.owner });
+  check('usunięty: 401 member_removed', gone.status === 401 && gone.data?.code === 'member_removed', gone);
+  const removeAgain = await call('DELETE', `/members/${s.ownerId}`, { token: s.ania });
+  check('ponowne usunięcie: 404', removeAgain.status === 404, removeAgain);
+  const toRemoved = await call('POST', `/members/${s.ownerId}/owner`, { token: s.ania });
+  check('rola dla usuniętego: 404', toRemoved.status === 404, toRemoved);
+
+  const del = await call('DELETE', '/space', { token: s.ania });
+  check('usunięcie mapy przez jedyną osobę', del.status === 200, del);
+  const after = await call('GET', '/space', { token: s.ania });
+  check('po usunięciu mapy: 401', after.status === 401, after);
+}
+
+/** Stara aplikacja na mapie bez założyciela może zmienić link (jak dawniej). */
+async function legacyRotate() {
+  const created = await call('POST', '/spaces');
+  const rotated = await call('POST', '/space/rotate', { token: created.data.token });
+  check('stara aplikacja: rotacja mapy bez założyciela', rotated.status === 200 && typeof rotated.data.token === 'string', rotated);
+  const leave = await call('POST', '/space/leave', { token: rotated.data.token });
+  check('stara aplikacja: wyjście wymaga podpisu (403)', leave.status === 403, leave);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
-void session; void sql; // używane w kolejnych sekcjach
+await management(session);
+await legacyRotate();
+void sql; // używane w Task A4
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
 process.exit(failed ? 1 : 0);

@@ -23,9 +23,22 @@
  */
 
 import { HttpError, corsHeaders, json, readJson } from './http';
-import { currentDay, newToken, sha256 } from './util';
+import { currentDay } from './util';
 import { Session, Space, authenticate, spaceFromInvite } from './auth';
-import { createSpace, invitePreview, joinSpace, spaceInfo } from './members';
+import {
+  createSpace,
+  deleteSpace,
+  invitePreview,
+  joinSpace,
+  leaveSpace,
+  listMembers,
+  removeMember,
+  renameSpace,
+  rotateInvite,
+  spaceInfo,
+  transferOwner,
+  updateMe,
+} from './members';
 
 export interface Env {
   DB: D1Database;
@@ -115,13 +128,15 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (photo) {
     return handlePhoto(request, env, space, photo[1], url.searchParams.get('variant'));
   }
-  if (request.method === 'POST' && path === '/space/rotate') {
-    const token = newToken();
-    await env.DB.prepare('UPDATE spaces SET token_hash = ? WHERE id = ?')
-      .bind(await sha256(token), space.id)
-      .run();
-    return json({ token });
-  }
+  if (request.method === 'GET' && path === '/members') return listMembers(env, session);
+  if (request.method === 'PATCH' && path === '/me') return updateMe(request, env, session);
+  if (request.method === 'POST' && path === '/space/leave') return leaveSpace(env, session);
+  if (request.method === 'PATCH' && path === '/space') return renameSpace(request, env, session);
+  if (request.method === 'DELETE' && path === '/space') return deleteSpace(env, session);
+  if (request.method === 'POST' && path === '/space/rotate') return rotateInvite(env, session);
+  const member = path.match(/^\/members\/([^/]+)(\/owner)?$/);
+  if (member && request.method === 'DELETE' && !member[2]) return removeMember(env, session, member[1]);
+  if (member && request.method === 'POST' && member[2]) return transferOwner(env, session, member[1]);
 
   throw new HttpError(404, 'Nie ma takiego adresu');
 }

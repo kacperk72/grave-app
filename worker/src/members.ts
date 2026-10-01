@@ -1,5 +1,5 @@
 import type { Env } from './index';
-import type { Session, Space } from './auth';
+import { Session, Space, requireMember, requireOwner } from './auth';
 import { HttpError, json, readJson, readOptionalJson } from './http';
 import { newToken, sha256 } from './util';
 
@@ -151,4 +151,122 @@ export async function spaceInfo(env: Env, session: Session): Promise<Response> {
     rev: session.space.rev,
     me: session.member ? { id: session.member.id, role: session.member.role } : null,
   });
+}
+
+export async function listMembers(env: Env, session: Session): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, color, role, joined_at AS joinedAt, last_seen_at AS lastSeenAt
+       FROM members WHERE space_id = ? AND removed_at IS NULL
+      ORDER BY role = 'owner' DESC, joined_at`
+  )
+    .bind(session.space.id)
+    .all();
+  return json({ members: results });
+}
+
+export async function updateMe(request: Request, env: Env, session: Session): Promise<Response> {
+  const me = requireMember(session);
+  const body = (await readJson(request)) as { name?: unknown; color?: unknown } | null;
+  const name = body?.name !== undefined ? parseName(body.name, 'Imię') : me.name;
+  const color = body?.color !== undefined ? parseColor(body.color) : me.color;
+  await env.DB.prepare('UPDATE members SET name = ?, color = ? WHERE id = ?').bind(name, color, me.id).run();
+  return json({ name, color });
+}
+
+export async function leaveSpace(env: Env, session: Session): Promise<Response> {
+  const me = requireMember(session);
+  if (me.role === 'owner') {
+    throw new HttpError(409, 'Założyciel musi najpierw przekazać rolę innej osobie');
+  }
+  await env.DB.prepare('UPDATE members SET removed_at = ? WHERE id = ?').bind(Date.now(), me.id).run();
+  return json({ ok: true });
+}
+
+export async function renameSpace(request: Request, env: Env, session: Session): Promise<Response> {
+  requireOwner(session);
+  const body = (await readJson(request)) as { name?: unknown } | null;
+  const name = parseName(body?.name, 'Nazwa mapy');
+  await env.DB.prepare('UPDATE spaces SET name = ? WHERE id = ?').bind(name, session.space.id).run();
+  return json({ name });
+}
+
+/** Nowy link zaproszenia. Dołączeni członkowie działają dalej — mają własne klucze. */
+export async function rotateInvite(env: Env, session: Session): Promise<Response> {
+  if (session.member) {
+    requireOwner(session);
+  } else if (await hasOwner(env, session.space.id)) {
+    // Stara aplikacja (klucz z linku) może zmienić link tylko na mapie bez założyciela
+    throw new HttpError(403, 'Link może zmienić tylko założyciel mapy');
+  }
+  const invite = newToken();
+  await env.DB.prepare('UPDATE spaces SET token_hash = ? WHERE id = ?')
+    .bind(await sha256(invite), session.space.id)
+    .run();
+  // `token` dla starej wersji aplikacji, która czyta to pole
+  return json({ invite, token: invite });
+}
+
+export async function removeMember(env: Env, session: Session, memberId: string): Promise<Response> {
+  const me = requireOwner(session);
+  if (memberId === me.id) {
+    throw new HttpError(400, 'Nie możesz usunąć siebie — przekaż rolę albo usuń mapę');
+  }
+  const res = await env.DB.prepare(
+    'UPDATE members SET removed_at = ? WHERE id = ? AND space_id = ? AND removed_at IS NULL'
+  )
+    .bind(Date.now(), memberId, session.space.id)
+    .run();
+  if (res.meta.changes === 0) throw new HttpError(404, 'Nie ma takiej osoby na tej mapie');
+  return json({ ok: true });
+}
+
+export async function transferOwner(env: Env, session: Session, memberId: string): Promise<Response> {
+  const me = requireOwner(session);
+  if (memberId === me.id) throw new HttpError(400, 'Już jesteś założycielem tej mapy');
+  const target = await env.DB.prepare(
+    'SELECT id FROM members WHERE id = ? AND space_id = ? AND removed_at IS NULL'
+  )
+    .bind(memberId, session.space.id)
+    .first();
+  if (!target) throw new HttpError(404, 'Nie ma takiej osoby na tej mapie');
+  // Kolejność ma znaczenie: indeks members_one_owner pozwala na jednego założyciela naraz
+  await env.DB.batch([
+    env.DB.prepare("UPDATE members SET role = 'member' WHERE id = ?").bind(me.id),
+    env.DB.prepare("UPDATE members SET role = 'owner' WHERE id = ?").bind(memberId),
+  ]);
+  return json({ ok: true });
+}
+
+/** Usuwa mapę. Bajty zdjęć trafiają do kolejki sprzątania (Cron, src/purge.ts). */
+export async function deleteSpace(env: Env, session: Session): Promise<Response> {
+  requireOwner(session);
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS active FROM members WHERE space_id = ? AND removed_at IS NULL'
+  )
+    .bind(session.space.id)
+    .first<{ active: number }>();
+  if ((row?.active ?? 0) > 1) {
+    throw new HttpError(409, 'Na mapie są jeszcze inne osoby — najpierw je usuń albo przekaż rolę');
+  }
+  const id = session.space.id;
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO photo_purge (key, queued_at)
+       SELECT key, ?1 FROM photo_objects WHERE space_id = ?2
+       ON CONFLICT (key) DO NOTHING`
+    ).bind(Date.now(), id),
+    env.DB.prepare('DELETE FROM graves WHERE space_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM members WHERE space_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM spaces WHERE id = ?').bind(id),
+  ]);
+  return json({ ok: true });
+}
+
+async function hasOwner(env: Env, spaceId: string): Promise<boolean> {
+  const row = await env.DB.prepare(
+    "SELECT 1 AS yes FROM members WHERE space_id = ? AND role = 'owner' AND removed_at IS NULL"
+  )
+    .bind(spaceId)
+    .first();
+  return row !== null;
 }
