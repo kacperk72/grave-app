@@ -256,6 +256,48 @@ export class SpaceService {
     this.members.update(({ [spaceId]: _, ...rest }) => rest);
   }
 
+  /**
+   * Dociąga do telefonu brakujące bajty zdjęć grobu z jego mapy.
+   * Zwraca, ilu zdjęć (pełnych) nadal brakuje — np. bez internetu.
+   */
+  async ensurePhotoBytes(graveId: string): Promise<number> {
+    const grave = await this.db.getGrave(graveId);
+    const spaceId = await this.db.getGraveSpaceId(graveId);
+    const space = this.spaces().find((s) => s.id === spaceId);
+    const token = space ? credentialOf(space) : null;
+    let missing = 0;
+    for (const photo of grave?.photos ?? []) {
+      if (/^(https?:|data:)/.test(photo.url)) continue;
+      for (const variant of ['full', 'thumb'] as const) {
+        if (await this.db.hasPhotoBlob(photo.id, variant)) continue;
+        const blob =
+          token && navigator.onLine
+            ? await this.api.photo(token, photo.id, variant).catch(() => null)
+            : null;
+        if (blob) await this.db.putPhotoBlob(photo.id, variant, blob, null);
+        else if (variant === 'full') missing++;
+      }
+    }
+    return missing;
+  }
+
+  /** Przenosi grób (ten sam id) na inną mapę. Bez bajtów zdjęć w telefonie odmawia — zginęłyby. */
+  async moveGrave(graveId: string, toSpaceId: string): Promise<void> {
+    if ((await this.ensurePhotoBytes(graveId)) > 0) {
+      throw new Error(
+        'Nie wszystkie zdjęcia są w telefonie. Połącz się z internetem i spróbuj ponownie.'
+      );
+    }
+    await this.db.moveGraves([graveId], toSpaceId);
+  }
+
+  /** Kopia grobu na inną mapę; zdjęcia, których nie da się pobrać, są pomijane. */
+  async copyGrave(graveId: string, toSpaceId: string): Promise<{ skippedPhotos: number }> {
+    await this.ensurePhotoBytes(graveId);
+    const res = await this.db.copyGraveTo(graveId, toSpaceId);
+    return { skippedPhotos: res.skippedPhotos };
+  }
+
   private tokenOf(spaceId: string): string {
     const space = this.spaces().find((s) => s.id === spaceId);
     const token = space ? credentialOf(space) : null;

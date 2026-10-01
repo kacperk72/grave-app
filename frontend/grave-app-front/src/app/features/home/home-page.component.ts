@@ -10,6 +10,7 @@ import { RouterLink } from '@angular/router';
 
 import { GraveService } from '../graves/services/grave.service';
 import { GeolocationService } from '../../core/services/geolocation.service';
+import { SpaceService } from '../../core/services/space.service';
 import { GravePhoto, GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 import { IconComponent } from '../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../shared/components/grave-photo.component';
@@ -52,6 +53,7 @@ const NEAR_RADIUS_M = 5000;
 })
 export class HomePageComponent {
   readonly graveService = inject(GraveService);
+  readonly spaces = inject(SpaceService);
   private readonly geolocation = inject(GeolocationService);
 
   readonly today = capitalize(
@@ -179,6 +181,12 @@ export class HomePageComponent {
   selectSort(value: SortOption): void {
     this.sortChoice.set(value);
     this.graveService.setSortBy(value);
+  }
+
+  /** Mapa, z której usunięto ten telefon: zachowaj groby w „Moje" albo usuń je z telefonu. */
+  async forgetRemoved(keep: boolean): Promise<void> {
+    const space = this.spaces.activeSpace();
+    if (space) await this.spaces.forget(space.id, keep);
   }
 
   shortCemetery(name: string): string {

@@ -16,6 +16,7 @@
       <button type="button" class="round-btn round-btn--sm" (click)="back()" aria-label="Wróć">
         <app-icon name="arrow-left" [size]="20" />
       </button>
+      @if (!readOnly()) {
       <div class="hero__actions">
         <button
           type="button"
@@ -43,6 +44,7 @@
           <app-icon name="edit" [size]="20" />
         </a>
       </div>
+      }
       <input
         #photoInput
         type="file"
@@ -153,12 +155,39 @@
     <p class="photo-error" role="alert">{{ photoError() }}</p>
     }
 
+    @if (changedBy(); as c) {
+    <p class="changed-by">
+      <app-avatar [name]="c.member.name" [color]="c.member.color" [size]="22" />
+      Ostatnio zmienił(a): {{ c.member.name }} · {{ c.when }}
+    </p>
+    }
+
+    @if (!readOnly() && targets().length > 0) {
+    <div class="transfer">
+      @if (transferMode(); as mode) {
+      <span class="transfer__label">{{ mode === 'move' ? 'Przenieś na mapę:' : 'Kopiuj na mapę:' }}</span>
+      @for (t of targets(); track t.id) {
+      <button type="button" class="chip" [disabled]="busy()" (click)="transfer(t.id)">{{ t.name }}</button>
+      }
+      <button type="button" class="chip" (click)="transferMode.set(null)">Anuluj</button>
+      } @else {
+      <button type="button" class="chip" (click)="transferMode.set('move')">Przenieś do innej mapy</button>
+      <button type="button" class="chip" (click)="transferMode.set('copy')">Kopiuj do innej mapy</button>
+      }
+    </div>
+    } @if (transferNote(); as note) {
+    <p class="transfer__note" role="status">{{ note }}</p>
+    }
+
+    @if (!readOnly()) {
     <button type="button" class="delete" (click)="deleteGrave()">
       <app-icon name="trash" [size]="16" /> Usuń grób
     </button>
+    }
   </div>
 
   <div class="actions">
+    @if (!readOnly()) {
     <button
       type="button"
       class="pill-btn pill-btn--light visited"
@@ -168,6 +197,7 @@
       <app-icon name="check" [size]="18" [stroke]="2" />
       {{ visitSaved() ? 'Zapisano' : 'Odwiedzony' }}
     </button>
+    }
     <a class="cta navigate" routerLink="/map" [queryParams]="{ navigate: g.id }">
       Nawiguj
       <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>

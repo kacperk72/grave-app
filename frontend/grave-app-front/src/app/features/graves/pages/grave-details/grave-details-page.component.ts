@@ -19,6 +19,10 @@ import { GravePhotoComponent } from '../../../../shared/components/grave-photo.c
 import { GravePhoto } from '../../../../shared/models/grave.model';
 import { PhotoService } from '../../../../core/services/photo.service';
 import { PhotoViewerComponent } from '../../../../shared/components/photo-viewer.component';
+import { AvatarComponent } from '../../../../shared/components/avatar.component';
+import { SpaceService } from '../../../../core/services/space.service';
+import { LOCAL_SPACE_ID, isShared } from '../../../../shared/models/space.model';
+import { relativeTime } from '../../../../shared/utils/member-display';
 import { canGoBackInApp } from '../../../../core/services/navigation';
 import {
   dueLabel,
@@ -34,7 +38,7 @@ import {
 
 @Component({
   selector: 'app-grave-details-page',
-  imports: [RouterLink, IconComponent, GravePhotoComponent, PhotoViewerComponent],
+  imports: [RouterLink, IconComponent, GravePhotoComponent, PhotoViewerComponent, AvatarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './grave-details-page.component.html',
   styleUrl: './grave-details-page.component.scss',
@@ -45,6 +49,7 @@ export class GraveDetailsPageComponent {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly photoService = inject(PhotoService);
+  readonly spaces = inject(SpaceService);
 
   private readonly id = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => p.get('id'))));
 
@@ -59,6 +64,26 @@ export class GraveDetailsPageComponent {
   readonly photoError = signal<string | null>(null);
   readonly visitSaved = signal(false);
   readonly busy = signal(false);
+
+  readonly readOnly = computed(() => this.spaces.readOnly());
+
+  /** „Ostatnio zmienił(a): Ania · 3 dni temu" — tylko na rodzinnej mapie, gdy znamy osobę. */
+  readonly changedBy = computed(() => {
+    const g = this.grave();
+    const spaceId = this.spaces.activeSpaceId();
+    if (!g?.updatedBy || spaceId === LOCAL_SPACE_ID) return null;
+    const member = this.spaces.members()[spaceId]?.find((m) => m.id === g.updatedBy);
+    return member ? { member, when: relativeTime(new Date(g.updatedAt).getTime()) } : null;
+  });
+
+  /** Mapy, na które można przenieść albo skopiować grób. */
+  readonly targets = computed(() =>
+    this.spaces
+      .spaces()
+      .filter((s) => s.id !== this.spaces.activeSpaceId() && s.status !== 'removed')
+  );
+  readonly transferMode = signal<'move' | 'copy' | null>(null);
+  readonly transferNote = signal<string | null>(null);
 
   readonly title = computed(() => {
     const g = this.grave();
@@ -132,6 +157,7 @@ export class GraveDetailsPageComponent {
   });
 
   constructor() {
+    this.spaces.loadMembers(this.spaces.activeSpaceId()).catch(() => {});
     const sub = this.geolocation.watchPosition().subscribe({
       next: (pos) => this.userLocation.set({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       error: () => {
@@ -188,6 +214,42 @@ export class GraveDetailsPageComponent {
       this.photoIndex.set(null);
     } finally {
       this.photoBusy.set(false);
+    }
+  }
+
+  async transfer(toSpaceId: string): Promise<void> {
+    const g = this.grave();
+    const mode = this.transferMode();
+    const target = this.spaces.spaces().find((s) => s.id === toSpaceId);
+    const from = this.spaces.activeSpace();
+    if (!g || !mode || !target || !from) return;
+    if (mode === 'move' && isShared(from)) {
+      const ok = confirm(
+        `„${this.title()}" zniknie z mapy „${from.name}" także u pozostałych osób. Przenieść?`
+      );
+      if (!ok) return;
+    }
+    this.busy.set(true);
+    this.transferNote.set(null);
+    try {
+      if (mode === 'move') {
+        await this.spaces.moveGrave(g.id, toSpaceId);
+        // Grób jest teraz na mapie docelowej — pokaż ją, żeby szczegóły zostały na ekranie
+        this.spaces.setActive(toSpaceId);
+        this.transferNote.set(`Przeniesiono na mapę „${target.name}".`);
+      } else {
+        const { skippedPhotos } = await this.spaces.copyGrave(g.id, toSpaceId);
+        const skipped =
+          skippedPhotos > 0
+            ? ` Pominięto ${skippedPhotos} ${pluralPl(skippedPhotos, 'zdjęcie', 'zdjęcia', 'zdjęć')} — nie ma ich w telefonie.`
+            : '';
+        this.transferNote.set(`Skopiowano na mapę „${target.name}".${skipped}`);
+      }
+      this.transferMode.set(null);
+    } catch (err) {
+      this.transferNote.set(err instanceof Error ? err.message : 'Nie udało się. Spróbuj ponownie.');
+    } finally {
+      this.busy.set(false);
     }
   }
 
