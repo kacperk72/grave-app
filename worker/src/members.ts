@@ -8,6 +8,8 @@ export const AVATAR_COLORS = ['sage', 'clay', 'sky', 'plum', 'sand', 'slate', 'r
 const MAX_NAME_CHARS = 40;
 const MAX_MEMBERS_PER_SPACE = 50;
 const DEFAULT_SPACE_NAME = 'Rodzinna mapa';
+/** Ile czasu po ostatnim użyciu klucza z linku mapa uchodzi za używaną przez niepodpisane telefony. */
+const LEGACY_ACTIVITY_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Imię albo nazwa mapy: zwinięte spacje, 1–40 znaków Unicode (emoji = 1 znak). */
 export function parseName(value: unknown, label: string): string {
@@ -247,6 +249,18 @@ export async function deleteSpace(env: Env, session: Session): Promise<Response>
     .first<{ active: number }>();
   if ((row?.active ?? 0) > 1) {
     throw new HttpError(409, 'Na mapie są jeszcze inne osoby — najpierw je usuń albo przekaż rolę');
+  }
+  // Telefony bez podpisu (stara aplikacja) nie są na liście członków, a nadal korzystają z mapy
+  if (env.ALLOW_INVITE_AS_MEMBER !== 'false') {
+    const seen = await env.DB.prepare('SELECT invite_seen_at FROM spaces WHERE id = ?')
+      .bind(session.space.id)
+      .first<{ invite_seen_at: number | null }>();
+    if (seen?.invite_seen_at && seen.invite_seen_at > Date.now() - LEGACY_ACTIVITY_MS) {
+      throw new HttpError(
+        409,
+        'Z tej mapy korzystają jeszcze telefony bez podpisu (starsza wersja aplikacji). Poczekaj, aż wszyscy zaktualizują aplikację.'
+      );
+    }
   }
   const id = session.space.id;
   await env.DB.batch([
