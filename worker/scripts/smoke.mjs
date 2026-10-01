@@ -216,8 +216,13 @@ async function purge() {
   check('mapa usunięta', del.status === 200, del);
   check('klucz zdjęcia w kolejce sprzątania', sql(`SELECT COUNT(*) AS n FROM photo_purge WHERE key = '${key}'`) === 1);
 
-  const cron = await fetch(`${API}/__scheduled?cron=17+3+*+*+*`);
-  check('Cron uruchomiony', cron.ok, cron.status);
+  // `wrangler d1 execute` obok `wrangler dev` potrafi na chwilę przeładować Workera — ponów
+  let cron;
+  for (let i = 0; i < 5 && !cron?.ok; i++) {
+    cron = await fetch(`${API}/__scheduled?cron=17+3+*+*+*`).catch(() => null);
+    if (!cron?.ok) await new Promise((r) => setTimeout(r, 1000));
+  }
+  check('Cron uruchomiony', cron?.ok, cron?.status);
   check('kolejka sprzątania pusta', sql(`SELECT COUNT(*) AS n FROM photo_purge WHERE key = '${key}'`) === 0);
   check('zdjęcie zdjęte z bezpiecznika miejsca', sql(`SELECT COUNT(*) AS n FROM photo_objects WHERE key = '${key}'`) === 0);
 }
