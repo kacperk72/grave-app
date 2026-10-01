@@ -523,7 +523,7 @@ textarea {
 }
 
 /* Kolory awatarów: .avatar-color--sage itd. */
-@each $c in sage, clay, sky, plum, sand, slate, rose, moss {
+@each $c in 'sage', 'clay', 'sky', 'plum', 'sand', 'slate', 'rose', 'moss' {
   .avatar-color--#{$c} {
     background: var(--avatar-#{$c}-bg);
     color: var(--avatar-#{$c}-ink);
