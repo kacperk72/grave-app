@@ -68,6 +68,24 @@ $grave-app-theme: mat.define-theme(
   --hairline: #e3e1db;
   --divider: #efede8;
 
+  // Awatary członków rodzinnej mapy — przygaszone, czytelne w obu motywach
+  --avatar-sage-bg: #dfe7dc;
+  --avatar-sage-ink: #3c5a3a;
+  --avatar-clay-bg: #f0dccf;
+  --avatar-clay-ink: #7a3e22;
+  --avatar-sky-bg: #d9e6f2;
+  --avatar-sky-ink: #2b4f73;
+  --avatar-plum-bg: #e7dbe8;
+  --avatar-plum-ink: #5e3563;
+  --avatar-sand-bg: #efe6cf;
+  --avatar-sand-ink: #6b5520;
+  --avatar-slate-bg: #e1e3e6;
+  --avatar-slate-ink: #3b4450;
+  --avatar-rose-bg: #f2dadd;
+  --avatar-rose-ink: #7c2f3a;
+  --avatar-moss-bg: #e2e6cf;
+  --avatar-moss-ink: #4d5a1e;
+
   // Kształt / cień
   --radius-xl: 32px; // zdjęcie główne
   --radius-lg: 28px; // karty
@@ -138,6 +156,22 @@ html.app-dark {
 
   --hairline: #2e2d2a;
   --divider: #2a2927;
+  --avatar-sage-bg: #2c3a2b;
+  --avatar-sage-ink: #c3d6bf;
+  --avatar-clay-bg: #3d2a20;
+  --avatar-clay-ink: #e8c2ad;
+  --avatar-sky-bg: #22313f;
+  --avatar-sky-ink: #b9d0e8;
+  --avatar-plum-bg: #362838;
+  --avatar-plum-ink: #dcc2df;
+  --avatar-sand-bg: #3a3220;
+  --avatar-sand-ink: #e3d3a8;
+  --avatar-slate-bg: #2b2e33;
+  --avatar-slate-ink: #c9ced6;
+  --avatar-rose-bg: #3d2529;
+  --avatar-rose-ink: #ebbcc3;
+  --avatar-moss-bg: #33381f;
+  --avatar-moss-ink: #d0d8a8;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-float: 0 14px 34px rgba(0, 0, 0, 0.5);
@@ -486,4 +520,12 @@ textarea {
 .p-toast .p-toast-message {
   border-radius: var(--radius-md);
   font-family: var(--font-sans);
+}
+
+/* Kolory awatarów: .avatar-color--sage itd. */
+@each $c in sage, clay, sky, plum, sand, slate, rose, moss {
+  .avatar-color--#{$c} {
+    background: var(--avatar-#{$c}-bg);
+    color: var(--avatar-#{$c}-ink);
+  }
 }

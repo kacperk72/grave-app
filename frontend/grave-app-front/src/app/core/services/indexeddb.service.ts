@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import Dexie, { Table } from 'dexie';
 import { Grave } from '../../shared/models/grave.model';
+import type { PhotoVariant } from '../../shared/models/grave.model';
 
 export interface LocalGrave extends Grave {
   localId?: number; // Auto-increment dla IndexedDB
@@ -17,7 +18,7 @@ export interface OutboxEntry {
   queuedAt: number;
 }
 
-export type PhotoVariant = 'full' | 'thumb';
+export type { PhotoVariant } from '../../shared/models/grave.model';
 
 /** Bajty zdjęcia trzymane w telefonie — dzięki temu zdjęcia działają bez zasięgu. */
 export interface PhotoBlobEntry {
