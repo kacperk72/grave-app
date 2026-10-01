@@ -288,7 +288,11 @@ export class IndexedDbService extends Dexie {
       for (const change of changes) {
         const local = await this.graves.get(change.id);
         const queued = !!(await this.graveQueue.get([spaceId, change.id]));
-        const action = decideRemoteChange(spaceId, change, local, queued);
+        const queuedInLocalSpace =
+          !!local &&
+          local.spaceId !== spaceId &&
+          !!(await this.graveQueue.get([local.spaceId, change.id]));
+        const action = decideRemoteChange(spaceId, change, local, queued, queuedInLocalSpace);
         if (action === 'delete') await this.graves.delete(change.id);
         if (action === 'put' && change.data) {
           await this.graves.put({

@@ -130,7 +130,23 @@ export class SpacePageComponent {
   async removeMember(m: Member): Promise<void> {
     this.menuFor.set(null);
     if (!confirm(`Usunąć ${m.name} z mapy? Ten telefon przestanie się synchronizować.`)) return;
-    await this.run(() => this.spaces.removeMember(this.id(), m.id), 'Nie udało się usunąć osoby.');
+    await this.run(async () => {
+      await this.spaces.removeMember(this.id(), m.id);
+      // Usunięta osoba wciąż ma link zaproszenia i mogłaby z niego dołączyć ponownie
+      const rotate = confirm(
+        `${m.name} nie ma już dostępu, ale nadal ma link zaproszenia i może z niego dołączyć ponownie. ` +
+          'Zmienić link teraz? Osoby, które już dołączyły, zostają.'
+      );
+      const space = this.space();
+      if (rotate && space) {
+        await this.spaces.rotateInvite(space);
+        this.note.set({
+          type: 'success',
+          icon: 'check',
+          text: `Usunięto ${m.name} i zmieniono link. Nowy wyślij tylko osobom, które mają dołączyć.`,
+        });
+      }
+    }, 'Nie udało się usunąć osoby.');
   }
 
   async transfer(m: Member): Promise<void> {

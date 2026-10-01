@@ -89,10 +89,12 @@ export class SpaceService {
     if (!token || !navigator.onLine) return;
     const [list, info] = await Promise.all([this.api.members(token), this.api.spaceInfo(token)]);
     this.members.update((all) => ({ ...all, [spaceId]: list }));
-    // Nazwę i rolę mógł zmienić ktoś inny (założyciel, przekazanie roli) — telefon dowiaduje się tutaj
+    // Nazwę i rolę mógł zmienić ktoś inny (założyciel, przekazanie roli) — telefon dowiaduje się tutaj.
+    // serverId zapamiętujemy też dla mapy sprzed podpisu: po zmianie linku nowe zaproszenie
+    // rozpozna ją po id serwera, zamiast zakładać w telefonie drugą kopię tej samej mapy.
     const role = list.find((m) => m.id === space!.memberId)?.role ?? space!.role;
-    if (role !== space!.role || info.name !== space!.name) {
-      await this.update(spaceId, { role, name: info.name });
+    if (role !== space!.role || info.name !== space!.name || info.spaceId !== space!.serverId) {
+      await this.update(spaceId, { role, name: info.name, serverId: info.spaceId });
     }
   }
 
@@ -115,6 +117,7 @@ export class SpaceService {
 
   /** Wyjście z mapy (członek). Mapa sprzed podpisu nie ma członka — tylko znika z telefonu. */
   async leave(spaceId: string, keep: boolean): Promise<void> {
+    if (keep) await this.ensureSpacePhotoBytes(spaceId);
     const space = this.spaces().find((s) => s.id === spaceId);
     if (space?.memberToken && space.status === 'active') await this.api.leave(space.memberToken);
     await this.forget(spaceId, keep);
@@ -122,8 +125,25 @@ export class SpaceService {
 
   /** Usunięcie mapy przez założyciela, gdy nikogo innego już na niej nie ma. */
   async deleteSpace(spaceId: string, keep: boolean): Promise<void> {
+    if (keep) await this.ensureSpacePhotoBytes(spaceId);
     await this.api.deleteSpace(this.tokenOf(spaceId));
     await this.forget(spaceId, keep);
+  }
+
+  /**
+   * Kopia w „Moje" ma sens tylko ze zdjęciami: po wyjściu z mapy (albo jej usunięciu) telefon
+   * nie dociągnie ich już z serwera. Zdjęcia nieaktywnej mapy mogą nie być jeszcze pobrane.
+   */
+  private async ensureSpacePhotoBytes(spaceId: string): Promise<void> {
+    let missing = 0;
+    for (const graveId of await this.db.graveIds(spaceId)) {
+      missing += await this.ensurePhotoBytes(graveId);
+    }
+    if (missing > 0) {
+      throw new Error(
+        'Nie wszystkie zdjęcia są w telefonie. Połącz się z internetem i spróbuj ponownie.'
+      );
+    }
   }
 
   async removeMember(spaceId: string, memberId: string): Promise<void> {

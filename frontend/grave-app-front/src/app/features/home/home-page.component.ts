@@ -186,7 +186,11 @@ export class HomePageComponent {
   /** Mapa, z której usunięto ten telefon: zachowaj groby w „Moje" albo usuń je z telefonu. */
   async forgetRemoved(keep: boolean): Promise<void> {
     const space = this.spaces.activeSpace();
-    if (space) await this.spaces.forget(space.id, keep);
+    if (!space) return;
+    if (!keep && !confirm(`Usunąć z telefonu groby mapy „${space.name}"? Tego nie można cofnąć.`)) {
+      return;
+    }
+    await this.spaces.forget(space.id, keep);
   }
 
   shortCemetery(name: string): string {
