@@ -108,6 +108,14 @@ async function touch(env: Env, spaceId: string, memberId: string | null): Promis
       'UPDATE spaces SET last_seen_at = ?1 WHERE id = ?2 AND (last_seen_at IS NULL OR last_seen_at < ?3)'
     ).bind(now, spaceId, before),
   ];
+  if (!memberId) {
+    // Dostęp kluczem z linku: ślad dla bezpiecznika usuwania mapy (members.ts → deleteSpace)
+    statements.push(
+      env.DB.prepare(
+        'UPDATE spaces SET invite_seen_at = ?1 WHERE id = ?2 AND (invite_seen_at IS NULL OR invite_seen_at < ?3)'
+      ).bind(now, spaceId, before)
+    );
+  }
   if (memberId) {
     statements.push(
       env.DB.prepare(

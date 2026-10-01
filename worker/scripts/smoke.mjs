@@ -227,11 +227,23 @@ async function purge() {
   check('zdjęcie zdjęte z bezpiecznika miejsca', sql(`SELECT COUNT(*) AS n FROM photo_objects WHERE key = '${key}'`) === 0);
 }
 
+/** Założyciel nie usunie mapy, z której korzystają jeszcze niepodpisane telefony (stara aplikacja). */
+async function legacyDelete() {
+  const created = await call('POST', '/spaces');
+  const invite = created.data.token;
+  const owner = await call('POST', '/join', { token: invite, body: { name: 'Jedyny', color: 'sky' } });
+  const legacySync = await call('GET', '/changes?since=0', { token: invite });
+  check('stara aplikacja synchronizuje kluczem z linku', legacySync.status === 200, legacySync);
+  const del = await call('DELETE', '/space', { token: owner.data.memberToken });
+  check('usunięcie mapy używanej przez niepodpisany telefon: 409', del.status === 409, del);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
 await management(session);
 await legacyRotate();
+await legacyDelete();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
