@@ -44,3 +44,10 @@ export async function readJson(request: Request): Promise<unknown> {
     throw new HttpError(400, 'Nieprawidłowy JSON');
   }
 }
+
+/** Jak `readJson`, ale puste ciało daje `null` (stara aplikacja wysyła `POST /spaces` bez treści). */
+export async function readOptionalJson(request: Request): Promise<unknown | null> {
+  const text = await request.clone().text();
+  if (text.trim() === '') return null;
+  return readJson(request);
+}

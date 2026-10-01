@@ -24,17 +24,16 @@
 
 import { HttpError, corsHeaders, json, readJson } from './http';
 import { currentDay, newToken, sha256 } from './util';
+import { Session, Space, authenticate, spaceFromInvite } from './auth';
+import { createSpace, invitePreview, joinSpace, spaceInfo } from './members';
 
 export interface Env {
   DB: D1Database;
   PHOTOS: KVNamespace;
   /** Adresy frontu, które mogą wołać API, rozdzielone przecinkami. */
   ALLOWED_ORIGINS: string;
-}
-
-interface Space {
-  id: string;
-  rev: number;
+  /** "false" wyłącza dostęp przejściowy kluczem zaproszenia. */
+  ALLOW_INVITE_AS_MEMBER?: string;
 }
 
 interface IncomingChange {
@@ -90,24 +89,27 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json({ ok: true, service: 'grave-app-api' });
   }
   if (request.method === 'POST' && path === '/spaces') {
-    return createSpace(env);
+    return createSpace(request, env);
+  }
+  // Link zaproszenia: podgląd i dołączenie (bez klucza członka)
+  if (request.method === 'GET' && path === '/invite') {
+    return invitePreview(env, await spaceFromInvite(request, env));
+  }
+  if (request.method === 'POST' && path === '/join') {
+    return joinSpace(request, env, await spaceFromInvite(request, env));
   }
 
-  const space = await authenticate(request, env);
+  const session = await authenticate(request, env);
+  const space = session.space;
 
   if (request.method === 'GET' && path === '/space') {
-    const row = await env.DB.prepare(
-      'SELECT COUNT(*) AS count FROM graves WHERE space_id = ? AND deleted = 0'
-    )
-      .bind(space.id)
-      .first<{ count: number }>();
-    return json({ graves: row?.count ?? 0, rev: space.rev });
+    return spaceInfo(env, session);
   }
   if (request.method === 'GET' && path === '/changes') {
     return pullChanges(env, space, Number(url.searchParams.get('since') ?? 0));
   }
   if (request.method === 'POST' && path === '/changes') {
-    return pushChanges(request, env, space);
+    return pushChanges(request, env, session);
   }
   const photo = path.match(/^\/photos\/([^/]+)$/);
   if (photo) {
@@ -124,45 +126,16 @@ async function route(request: Request, env: Env): Promise<Response> {
   throw new HttpError(404, 'Nie ma takiego adresu');
 }
 
-async function createSpace(env: Env): Promise<Response> {
-  const token = newToken();
-  const now = Date.now();
-  await env.DB.prepare(
-    'INSERT INTO spaces (id, token_hash, rev, created_at, last_seen_at) VALUES (?, ?, 0, ?, ?)'
-  )
-    .bind(crypto.randomUUID(), await sha256(token), now, now)
-    .run();
-  return json({ token, rev: 0 }, 201);
-}
-
-async function authenticate(request: Request, env: Env): Promise<Space> {
-  const header = request.headers.get('Authorization') ?? '';
-  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  if (!token) throw new HttpError(401, 'Brak klucza rodzinnej mapy');
-
-  const space = await env.DB.prepare('SELECT id, rev FROM spaces WHERE token_hash = ?')
-    .bind(await sha256(token))
-    .first<Space>();
-  // Ten sam komunikat dla złego i unieważnionego klucza — nie zdradzamy, które to
-  if (!space) throw new HttpError(401, 'Link do rodzinnej mapy jest nieaktualny');
-
-  // Ślad aktywności, żeby kiedyś dało się sprzątnąć porzucone mapy
-  await env.DB.prepare('UPDATE spaces SET last_seen_at = ? WHERE id = ?')
-    .bind(Date.now(), space.id)
-    .run();
-  return space;
-}
-
 async function pullChanges(env: Env, space: Space, since: number): Promise<Response> {
   const after = Number.isFinite(since) && since > 0 ? Math.floor(since) : 0;
   const { results } = await env.DB.prepare(
-    `SELECT id, data, deleted, rev FROM graves
+    `SELECT id, data, deleted, rev, updated_by FROM graves
       WHERE space_id = ? AND rev > ?
       ORDER BY rev
       LIMIT ?`
   )
     .bind(space.id, after, PULL_PAGE_SIZE + 1)
-    .all<{ id: string; data: string | null; deleted: number; rev: number }>();
+    .all<{ id: string; data: string | null; deleted: number; rev: number; updated_by: string | null }>();
 
   const more = results.length > PULL_PAGE_SIZE;
   const page = more ? results.slice(0, PULL_PAGE_SIZE) : results;
@@ -175,11 +148,13 @@ async function pullChanges(env: Env, space: Space, since: number): Promise<Respo
       rev: r.rev,
       deleted: r.deleted === 1,
       data: r.data ? JSON.parse(r.data) : null,
+      updatedBy: r.updated_by,
     })),
   });
 }
 
-async function pushChanges(request: Request, env: Env, space: Space): Promise<Response> {
+async function pushChanges(request: Request, env: Env, session: Session): Promise<Response> {
+  const space = session.space;
   const changes = parseChanges(await readJson(request));
   if (changes.length === 0) return json({ rev: space.rev });
 
@@ -203,19 +178,21 @@ async function pushChanges(request: Request, env: Env, space: Space): Promise<Re
     statements.push(env.DB.prepare('UPDATE spaces SET rev = rev + 1 WHERE id = ?').bind(space.id));
     statements.push(
       env.DB.prepare(
-        `INSERT INTO graves (space_id, id, data, deleted, rev, updated_at)
-         VALUES (?1, ?2, ?3, ?4, (SELECT rev FROM spaces WHERE id = ?1), ?5)
+        `INSERT INTO graves (space_id, id, data, deleted, rev, updated_at, updated_by)
+         VALUES (?1, ?2, ?3, ?4, (SELECT rev FROM spaces WHERE id = ?1), ?5, ?6)
          ON CONFLICT (space_id, id) DO UPDATE SET
            data = excluded.data,
            deleted = excluded.deleted,
            rev = excluded.rev,
-           updated_at = excluded.updated_at`
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by`
       ).bind(
         space.id,
         change.id,
         change.deleted ? null : JSON.stringify(change.data),
         change.deleted ? 1 : 0,
-        now
+        now,
+        session.member?.id ?? null
       )
     );
   }

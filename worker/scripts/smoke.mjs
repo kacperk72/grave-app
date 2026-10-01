@@ -75,8 +75,75 @@ async function legacy() {
   return token;
 }
 
+/** Nowa mapa z założycielem, podgląd zaproszenia, dołączanie, kto zapisał grób. */
+async function members() {
+  const created = await call('POST', '/spaces', {
+    body: { name: '  Rodzina   Testowa ', member: { name: 'Kacper', color: 'sage' } },
+  });
+  check(
+    'nowa mapa z założycielem',
+    created.status === 201 && created.data.role === 'owner' && created.data.name === 'Rodzina Testowa' &&
+      typeof created.data.invite === 'string' && typeof created.data.memberToken === 'string',
+    created
+  );
+  const { invite, memberToken: owner, memberId: ownerId, spaceId } = created.data;
+
+  const preview = await call('GET', '/invite', { token: invite });
+  check(
+    'podgląd zaproszenia',
+    preview.status === 200 && preview.data.name === 'Rodzina Testowa' && preview.data.members.length === 1 &&
+      preview.data.members[0].name === 'Kacper' && preview.data.graves === 0,
+    preview
+  );
+
+  const tooLong = await call('POST', '/join', { token: invite, body: { name: 'x'.repeat(41), color: 'sky' } });
+  check('imię dłuższe niż 40 znaków: 400', tooLong.status === 400, tooLong);
+  const badColor = await call('POST', '/join', { token: invite, body: { name: 'Ania', color: 'red' } });
+  check('nieznany kolor: 400', badColor.status === 400, badColor);
+  const viaMember = await call('POST', '/join', { token: owner, body: { name: 'Ania', color: 'rose' } });
+  check('dołączenie kluczem członka zamiast linku: 401', viaMember.status === 401, viaMember);
+
+  const joined = await call('POST', '/join', { token: invite, body: { name: '  Ania 🌷 ', color: 'rose' } });
+  check(
+    'dołączenie jako członek',
+    joined.status === 201 && joined.data.role === 'member' && joined.data.spaceId === spaceId,
+    joined
+  );
+  const ania = joined.data.memberToken;
+
+  await call('POST', '/changes', { token: ania, body: { changes: [{ id: 'g1', deleted: false, data: grave('g1') }] } });
+  const pulled = await call('GET', '/changes?since=0', { token: owner });
+  check('updatedBy = id członka', pulled.data?.changes?.[0]?.updatedBy === joined.data.memberId, pulled);
+
+  const space = await call('GET', '/space', { token: ania });
+  check(
+    'GET /space: nazwa, ja i rola',
+    space.status === 200 && space.data.name === 'Rodzina Testowa' && space.data.me?.role === 'member' && space.data.graves === 1,
+    space
+  );
+  return { invite, owner, ownerId, ania, aniaId: joined.data.memberId, spaceId };
+}
+
+/** Mapa sprzed migracji: pierwszy podpisany zostaje założycielem. */
+async function legacyOwner(token) {
+  const first = await call('POST', '/join', { token, body: { name: 'Pierwszy', color: 'moss' } });
+  check('stara mapa: pierwszy dołączający zostaje założycielem', first.data?.role === 'owner', first);
+  const second = await call('POST', '/join', { token, body: { name: 'Drugi', color: 'sky' } });
+  check('stara mapa: drugi to zwykły członek', second.data?.role === 'member', second);
+  const pulled = await call('GET', '/changes?since=0', { token: second.data?.memberToken });
+  check(
+    'stara mapa: dawne groby widoczne, updatedBy = null',
+    pulled.data?.changes?.some((c) => c.id === 'g-legacy' && c.updatedBy === null),
+    pulled
+  );
+  const stillLegacy = await call('GET', '/changes?since=0', { token });
+  check('stara mapa: klucz z linku nadal działa (przejściowo)', stillLegacy.status === 200, stillLegacy);
+}
+
 const legacyToken = await legacy();
-void legacyToken; void sql; // używane w kolejnych sekcjach
+const session = await members();
+await legacyOwner(legacyToken);
+void session; void sql; // używane w kolejnych sekcjach
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
 process.exit(failed ? 1 : 0);
