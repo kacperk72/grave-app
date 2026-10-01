@@ -30,7 +30,12 @@ export class App {
   // i nie pokazują dolnej nawigacji.
   readonly showNav = computed(() => {
     const p = this.path();
-    return !(p.startsWith('/welcome') || p.startsWith('/graves/') || p.startsWith('/rodzina'));
+    return !(
+      p.startsWith('/welcome') ||
+      p.startsWith('/graves/') ||
+      p.startsWith('/rodzina') ||
+      p.startsWith('/mapy/')
+    );
   });
 
   // Okienko podpisu nie przeszkadza w powitaniu ani w dołączaniu z linku

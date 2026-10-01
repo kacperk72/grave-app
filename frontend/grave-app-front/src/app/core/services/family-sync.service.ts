@@ -140,6 +140,10 @@ export class FamilySyncService {
       const touched = await this.pull(space, token);
       await this.spaces.update(space.id, { syncedAt: Date.now() });
       this.setStatus(space.id, { state: 'idle', error: null });
+      // Awatary w przełączniku i panelu: lista członków aktywnej mapy przy okazji synchronizacji
+      if (space.id === this.spaces.activeSpaceId()) {
+        await this.spaces.loadMembers(space.id).catch(() => {});
+      }
       return touched;
     } catch (err) {
       if (err instanceof ApiError && err.code === 'member_removed') {
@@ -257,8 +261,7 @@ export class FamilySyncService {
   }
 
   // --- Zgodność z obecnymi ekranami (Ustawienia, dołączanie, Start) --------
-  // Działa na aktywnej mapie rodzinnej. Usuwane w Task B6 (akcje)
-  // i B7 (connected, state, pending, errorMessage, lastSyncAt).
+  // Działa na aktywnej mapie rodzinnej. Usuwane w Task B7.
 
   private readonly current = computed(() => {
     const active = this.spaces.activeSpace();
@@ -278,27 +281,4 @@ export class FamilySyncService {
     return c ? this.syncOf(c.id).error : null;
   });
   readonly lastSyncAt = computed(() => this.current()?.syncedAt ?? null);
-  readonly token = computed(() => {
-    const c = this.current();
-    return c ? credentialOf(c) : null;
-  });
-
-  createSpace(): Promise<void> {
-    return this.spaces.createLegacy();
-  }
-
-  async rotateLink(): Promise<void> {
-    const c = this.current();
-    if (c) await this.spaces.rotateInvite(c);
-  }
-
-  async leave(): Promise<void> {
-    const c = this.current();
-    if (c) await this.spaces.forget(c.id, true);
-  }
-
-  async shareInvite(): Promise<'shared' | 'copied' | 'cancelled'> {
-    const c = this.current();
-    return c ? this.spaces.shareInvite(c) : 'cancelled';
-  }
 }

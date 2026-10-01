@@ -108,6 +108,10 @@ export class FamilyApi {
     return this.request('POST', '/join', invite, profile);
   }
 
+  spaceInfo(token: string): Promise<{ spaceId: string; name: string; graves: number }> {
+    return this.request('GET', '/space', token);
+  }
+
   async members(token: string): Promise<Member[]> {
     return (await this.request<{ members: Member[] }>('GET', '/members', token)).members;
   }

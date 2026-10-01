@@ -65,6 +65,7 @@
   background: transparent;
   color: var(--ink);
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 
   & + & {
@@ -106,6 +107,9 @@
   }
 
   &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 15px;
     font-weight: 600;
   }
