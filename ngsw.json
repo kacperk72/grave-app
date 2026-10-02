@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "timestamp": 1790938715186,
+  "timestamp": 1790939999286,
   "index": "/index.html",
   "assetGroups": [
     {
@@ -53,10 +53,12 @@
         "ignoreVary": true
       },
       "urls": [
+        "/apple-touch-icon.png",
         "/favicon-16x16.png",
         "/favicon-32x32.png",
-        "/graveMap-192x192.png",
-        "/graveMap-512x512.png",
+        "/icon-192.png",
+        "/icon-512.png",
+        "/icon.svg",
         "/media/layers-2x-TBM42ERR.png",
         "/media/layers-55W3Q4RM.png",
         "/media/marker-icon-2V3QKKVC.png",
@@ -114,6 +116,7 @@
     }
   ],
   "hashTable": {
+    "/apple-touch-icon.png": "18e8cef37e71ad90a9a85389e00254fe537d4d25",
     "/chunk-3JRTLDVQ.js": "8d0efa618bcb64f38df29e6bc7d79a805bcdfbc9",
     "/chunk-3NZ6QSPY.js": "7c32922858a4ab566d4b1d62e114e580856f2411",
     "/chunk-4JYWJ7WC.js": "a913fbbe12b22717ef0e9f137c93bb3869b15ae5",
@@ -140,14 +143,15 @@
     "/chunk-YPN6HH3R.js": "2ff1c832678f4581d6a2e7824929319950e752e8",
     "/chunk-Z426Q5BA.js": "dbe8c2ea749e81649e33a0742dc3fd56c98e5301",
     "/chunk-ZYJMHFYK.js": "d87392917ebb26176e8a63caac9c34b993bf92d3",
-    "/favicon-16x16.png": "6cb85cf76a6a872af8e71752416f878d08033f2d",
-    "/favicon-32x32.png": "2e1d567a78f31b1725844454b2b5e8295bcf22e4",
-    "/favicon.ico": "29fce2416dd5e03422ddf395dc22714997835065",
-    "/graveMap-192x192.png": "cfb32eb623da309258b4d0a6e9cb144d296af2fc",
-    "/graveMap-512x512.png": "88efff8fd0f08862bdbd5e2519a169e3bde2e421",
-    "/index.html": "d1e09238e78c6fa5c99e73c9cd1fc30e9927d37a",
+    "/favicon-16x16.png": "83f93803049d01050a08dfd60ff177b970113588",
+    "/favicon-32x32.png": "0ed5799f1414555626d7b55ed70a2ef60243aead",
+    "/favicon.ico": "f66d2929641c7918a1c17aa4d34ae7b61eb0091e",
+    "/icon-192.png": "b0d6f0e6c31e026a8f3cdb90f1948a2c72e5278f",
+    "/icon-512.png": "9cc2380f15406b7adbd548560e0df41a2c890197",
+    "/icon.svg": "ae663d366504b1cdf0707ca39533df806a4935f7",
+    "/index.html": "039f82f0e0cb5d7192ae7d73fff69886a3690b0c",
     "/main-XTMEWEMO.js": "4aeb58519b9e3a29862c5cd3910fedfb0cdfba7e",
-    "/manifest.webmanifest": "f6ead05691837c19dd24fea8f0448d24e0632429",
+    "/manifest.webmanifest": "c40be83447cb1f774d7b3a70cf0c0b68c4b287e2",
     "/media/layers-2x-TBM42ERR.png": "152a162333e46d24f9d89f566312fc0c64011dee",
     "/media/layers-55W3Q4RM.png": "c9e7528e491a39232ba24a2706c6c739d6fb0f06",
     "/media/marker-icon-2V3QKKVC.png": "60a90bcbb2b42b7ddb4556db94eb7c1084b0e5da",
