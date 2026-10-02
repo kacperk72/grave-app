@@ -255,7 +255,7 @@ export class SpaceService {
       try {
         await navigator.share({
           title: space.name,
-          text: `Dołącz do mapy grobów „${space.name}" w GraveMap:`,
+          text: `Dołącz do mapy grobów „${space.name}" w znajdzgroby.pl:`,
           url,
         });
         return 'shared';

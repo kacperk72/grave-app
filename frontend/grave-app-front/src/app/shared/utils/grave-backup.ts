@@ -4,7 +4,8 @@
  */
 import { DeceasedPerson, Grave } from '../models/grave.model';
 
-export const BACKUP_APP = 'GraveMap';
+/** Oznaczenie pliku kopii. Starsze kopie mają „GraveMap" — import ich nie sprawdza, więc działają. */
+export const BACKUP_APP = 'znajdzgroby.pl';
 export const BACKUP_VERSION = 1;
 
 export interface GraveBackup {
@@ -38,7 +39,7 @@ export function parseBackup(text: string): ParseResult {
 
   const rawGraves = extractRawGraves(data);
   if (!rawGraves) {
-    return { ok: false, error: 'Plik nie zawiera listy grobów GraveMap.' };
+    return { ok: false, error: 'Plik nie zawiera listy grobów z aplikacji znajdzgroby.pl.' };
   }
 
   const graves: Grave[] = [];

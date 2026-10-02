@@ -34,7 +34,7 @@ export class BackupService {
     }
 
     const json = serializeBackup(graves);
-    const filename = `gravemap-${this.today()}.json`;
+    const filename = `znajdzgroby-${this.today()}.json`;
     const file = new File([json], filename, { type: 'application/json' });
 
     // Na telefonie: natywne „Udostępnij" z plikiem. Fallback: pobranie.
@@ -43,8 +43,8 @@ export class BackupService {
       try {
         await navigator.share({
           files: [file],
-          title: 'GraveMap',
-          text: 'Moja mapa grobów (GraveMap)',
+          title: 'znajdzgroby.pl',
+          text: 'Moja mapa grobów (znajdzgroby.pl)',
         });
         return graves.length;
       } catch (err) {
