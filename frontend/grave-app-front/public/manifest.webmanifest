@@ -1,6 +1,6 @@
 {
-  "name": "GraveMap",
-  "short_name": "GraveMap",
+  "name": "znajdzgroby.pl",
+  "short_name": "Znajdź groby",
   "description": "Aplikacja do zarządzania i lokalizowania grobów bliskich",
   "theme_color": "#10b981",
   "background_color": "#ffffff",

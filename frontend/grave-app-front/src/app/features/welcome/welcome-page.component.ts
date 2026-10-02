@@ -36,7 +36,7 @@ import { markOnboardingSeen } from '../../core/services/onboarding';
       <header class="top">
         <span class="brand">
           <span class="brand__mark"><app-icon name="flame" [size]="18" /></span>
-          GraveMap
+          znajdzgroby.pl
         </span>
         <button type="button" class="skip" (click)="start()">Pomiń</button>
       </header>

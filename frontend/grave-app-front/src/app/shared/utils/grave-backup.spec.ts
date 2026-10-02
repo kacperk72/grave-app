@@ -35,9 +35,19 @@ describe('serializeBackup', () => {
     expect(parsed.graves).toHaveLength(1);
     expect(parsed.graves[0].cemeteryName).toBe('Cmentarz Rakowicki');
   });
+
+  it('oznacza plik nazwą aplikacji znajdzgroby.pl', () => {
+    expect(JSON.parse(serializeBackup([makeGrave()])).app).toBe('znajdzgroby.pl');
+  });
 });
 
 describe('parseBackup', () => {
+  it('przyjmuje kopię zrobioną jeszcze pod nazwą GraveMap', () => {
+    const old = JSON.stringify({ app: 'GraveMap', version: 1, exportedAt: 'x', graves: [makeGrave()] });
+    const res = parseBackup(old);
+    expect(res.ok && res.graves.length).toBe(1);
+  });
+
   it('round-trip: serialize → parse zachowuje groby', () => {
     const graves = [makeGrave(), makeGrave({ id: 'g2', cemeteryName: 'Cmentarz Podgórski' })];
     const res = parseBackup(serializeBackup(graves));
