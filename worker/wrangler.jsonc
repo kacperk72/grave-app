@@ -10,7 +10,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "vars": {
-    "ALLOWED_ORIGINS": "https://darkgrey-octopus-623910.hostingersite.com",
+    "ALLOWED_ORIGINS": "https://znajdzgroby.pl,https://www.znajdzgroby.pl,https://darkgrey-octopus-623910.hostingersite.com",
     // Klucz z linku zaproszenia działa też jako klucz członka — dla wersji aplikacji
     // sprzed list członków. Wyłączyć ("false"), gdy wszyscy mają wpis w `members`.
     "ALLOW_INVITE_AS_MEMBER": "true"

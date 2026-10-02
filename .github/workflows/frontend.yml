@@ -92,7 +92,7 @@ jobs:
       contents: write # push na gałąź `deploy`
     environment:
       name: production
-      url: https://darkgrey-octopus-623910.hostingersite.com
+      url: https://znajdzgroby.pl
     steps:
       - uses: actions/download-artifact@v4
         with:
