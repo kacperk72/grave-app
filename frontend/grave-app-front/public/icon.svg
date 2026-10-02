@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Ikona znajdzgroby.pl: pinezka (znajdź) ze zniczem (pamięć). Źródło PNG-ów i favicon. -->
-  <rect width="512" height="512" fill="#171715"/>
-  <path d="M256 420C256 420 136 318 136 225A120 120 0 0 1 376 225C376 318 256 420 256 420Z" fill="#f3f2ef"/>
+  <rect width="512" height="512" fill="#f3f2ef"/>
+  <path d="M256 420C256 420 136 318 136 225A120 120 0 0 1 376 225C376 318 256 420 256 420Z" fill="#3b3a36"/>
   <path transform="translate(154 137) scale(8.5)" fill="#E7A95C" d="M12 3c2.5 3 5 5.5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2.2-4.6.3 1.6 1.2 2.6 2.3 2.6-1-2.4-.6-4.6.5-7z"/>
 </svg>
