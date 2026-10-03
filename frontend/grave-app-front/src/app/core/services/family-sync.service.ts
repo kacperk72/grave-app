@@ -1,10 +1,11 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 
-import { IndexedDbService, PhotoVariant } from './indexeddb.service';
+import { IndexedDbService, PhotoQueueEntry, PhotoVariant } from './indexeddb.service';
 import { ApiError, FamilyApi, OutgoingChange } from './family-api';
 import { SpaceService } from './space.service';
 import { GraveService } from '../../features/graves/services/grave.service';
 import { LocalSpace, credentialOf } from '../../shared/models/space.model';
+import { photoRejection } from '../../shared/utils/photo-upload';
 
 export type SyncState = 'off' | 'idle' | 'syncing' | 'offline' | 'error' | 'revoked' | 'removed';
 
@@ -171,10 +172,12 @@ export class FamilySyncService {
     for (;;) {
       const batch = await this.db.getPhotoQueue(spaceId, PHOTO_BATCH);
       if (batch.length === 0) return;
+      const done: PhotoQueueEntry[] = [];
       for (const entry of batch) {
         const path = `/photos/${encodeURIComponent(entry.photoId)}`;
         if (entry.op === 'delete') {
           await this.api.send('DELETE', path, token);
+          done.push(entry);
           continue;
         }
         const blob = entry.variant
@@ -182,16 +185,23 @@ export class FamilySyncService {
           : undefined;
         try {
           if (blob) await this.api.send('PUT', `${path}?variant=${entry.variant}`, token, blob);
+          done.push(entry);
         } catch (err) {
-          // Odmowa na stałe (limit miejsca, format) nie może blokować synchronizacji grobów
-          if (err instanceof ApiError && [413, 415, 429, 507].includes(err.status)) {
-            this.photoWarning.set(err.message);
+          const outcome = err instanceof ApiError ? photoRejection(err.status) : 'fail';
+          if (outcome === 'fail') throw err;
+          this.photoWarning.set(err instanceof Error ? err.message : null);
+          if (outcome === 'drop') {
+            // Odmowa na stałe nie może blokować synchronizacji grobów — zdjęcie zostaje w telefonie
+            done.push(entry);
             continue;
           }
-          throw err;
+          // Dzienny limit: ta i kolejne zdjęcia zostają w kolejce i pojadą po resecie limitu.
+          // Groby synchronizują się dalej normalnie.
+          await this.db.removeFromPhotoQueue(done);
+          return;
         }
       }
-      await this.db.removeFromPhotoQueue(batch);
+      await this.db.removeFromPhotoQueue(done);
     }
   }
 
