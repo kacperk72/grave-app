@@ -41,7 +41,8 @@ export class App {
       p.startsWith('/welcome') ||
       p.startsWith('/graves/') ||
       p.startsWith('/rodzina') ||
-      p.startsWith('/mapy/')
+      p.startsWith('/mapy/') ||
+      p.startsWith('/logowanie')
     );
   });
 
