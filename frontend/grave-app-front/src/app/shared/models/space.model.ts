@@ -29,6 +29,8 @@ export interface LocalSpace {
   syncedAt: number | null;
   status: SpaceStatus;
   createdAt: number;
+  /** 'personal' = prywatna „Moje” konta na serwerze; brak = mapa rodzinna. */
+  kind?: 'family' | 'personal';
 }
 
 /** Członek mapy, jak zwraca go `GET /members`. */
