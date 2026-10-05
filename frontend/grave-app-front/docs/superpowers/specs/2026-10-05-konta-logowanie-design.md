@@ -1,4 +1,4 @@
-# Konta i logowanie kodem z maila
+# Konta: e-mail i hasło
 
 Data: 2026-10-05
 Aplikacja: `grave-app` (znajdzgroby.pl) — Worker `worker/` (Cloudflare Worker + D1 + KV) i front `frontend/grave-app-front`
@@ -15,7 +15,9 @@ się to trzema „Kacprami” i ręcznym przenoszeniem.
 
 | Temat | Decyzja |
 |---|---|
-| Sposób logowania | Tylko e-mail: mail z **6-cyfrowym kodem i linkiem**. Bez haseł, bez Google. |
+| Sposób logowania | **E-mail i hasło.** Kod z maila (6 cyfr + link) tylko do potwierdzenia adresu przy zakładaniu konta i do ustawienia nowego hasła. Bez Google i innych dostawców. |
+| Hashowanie haseł | PBKDF2-SHA256 (WebCrypto), losowa sól, **20 000 iteracji** — mieści się w 10 ms CPU darmowego Workera. Algorytm i liczba iteracji zapisane przy haśle, więc po przejściu na płatny plan hasła przeliczają się na mocniejsze przy następnym logowaniu. |
+| Zasady hasła | 8–128 znaków; po 5 błędnych próbach logowanie na to konto blokowane na 15 minut. |
 | Czy konto jest obowiązkowe | **Opcjonalne.** Bez logowania aplikacja działa jak dziś. |
 | Technika | Własne logowanie w Workerze, sesja jako token `Bearer` (wariant A). Bez ciasteczek, bez zmian DNS dla API. |
 | Wysyłka maili | Resend (darmowy plan: 100/dobę), nadawca `logowanie@znajdzgroby.pl`. |
@@ -24,14 +26,21 @@ się to trzema „Kacprami” i ręcznym przenoszeniem.
 | Kopia do pliku | Zostaje dla osób bez konta, z dopiskiem „bez zdjęć”. Usunięcie to osobna, późniejsza decyzja. |
 | Twardy warunek | Wdrożenie **niczego nie usuwa ani nie nadpisuje**: obecni członkowie, groby i zdjęcia zostają. |
 
-Poza zakresem: hasła, logowanie przez Google lub Apple, usuwanie konta, zmiana adresu e-mail, wielu
+Poza zakresem: logowanie przez Google lub Apple, logowanie samym kodem bez hasła, usuwanie konta, zmiana adresu e-mail, wielu
 właścicieli „Moje”, udostępnianie „Moje” innym (do tego są mapy rodzinne), usunięcie kopii do pliku.
 
-## Dlaczego kod, a nie sam link
+## Przepływy
 
-Link z maila na iPhonie otwiera się w Safari, a aplikacja dodana do ekranu początkowego ma osobne
-dane. Zalogowanie przez link w Safari nie loguje więc aplikacji z ekranu. Kod wpisuje się w tej
-samej aplikacji, w której się logujemy, więc działa wszędzie. Link zostaje jako wygoda w przeglądarce.
+- **Założenie konta:** e-mail → mail z kodem → wpisanie kodu (potwierdza adres i chroni przed
+  literówką) → ustawienie hasła → zalogowany.
+- **Logowanie:** e-mail + hasło.
+- **Nie pamiętam hasła:** ten sam przepływ co założenie konta — e-mail → kod → nowe hasło. Serwer
+  sam rozpoznaje, czy konto istnieje; odpowiedzi są identyczne, więc nie da się sprawdzić, czy dany
+  adres ma konto. Ustawienie nowego hasła unieważnia sesje na innych urządzeniach.
+
+Dlaczego kod, a nie sam link: link z maila na iPhonie otwiera się w Safari, a aplikacja dodana do
+ekranu początkowego ma osobne dane, więc potwierdzenie w Safari nie dotarłoby do niej. Kod wpisuje
+się w tej samej aplikacji. Link zostaje jako wygoda w przeglądarce.
 
 ## Część 1 — serwer (Worker + D1)
 
@@ -44,7 +53,14 @@ w istniejących wierszach.
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,          -- znormalizowany: małe litery, bez spacji
-  created_at INTEGER NOT NULL
+  password_hash TEXT NOT NULL,         -- base64 wyniku PBKDF2
+  password_salt TEXT NOT NULL,         -- base64, 16 losowych bajtów
+  password_algo TEXT NOT NULL,         -- 'pbkdf2-sha256'
+  password_iterations INTEGER NOT NULL,
+  failed_logins INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER,                -- blokada po 5 błędnych hasłach (15 minut)
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 -- Sesja = token urządzenia po zalogowaniu (w bazie tylko SHA-256)
@@ -57,7 +73,8 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_user ON sessions (user_id);
 
--- Prośba o zalogowanie: kod (6 cyfr) i link, oba jako SHA-256, ważne 15 minut
+-- Potwierdzenie adresu (zakładanie konta / nowe hasło): kod (6 cyfr) i link, oba jako SHA-256,
+-- ważne 15 minut. Po poprawnym kodzie wiersz dostaje setup_hash — jednorazowe prawo do ustawienia hasła.
 CREATE TABLE login_codes (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL,
@@ -66,7 +83,9 @@ CREATE TABLE login_codes (
   attempts INTEGER NOT NULL DEFAULT 0, -- błędne kody; po 5 kod przepada
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
-  used_at INTEGER
+  used_at INTEGER,
+  setup_hash TEXT UNIQUE,              -- SHA-256 tokenu ustawienia hasła (ważny 15 minut od użycia kodu)
+  setup_expires_at INTEGER
 );
 CREATE INDEX login_codes_email ON login_codes (email, created_at);
 
@@ -110,7 +129,9 @@ Mapa `personal`:
 | Metoda i ścieżka | Autoryzacja | Działanie |
 |---|---|---|
 | `POST /auth/request {email}` | brak | Zawsze **202** z tą samą treścią (nie zdradza, czy konto istnieje). Gdy adres poprawny i limit nieprzekroczony: zapis `login_codes`, mail z kodem i linkiem `https://znajdzgroby.pl/logowanie#<link>`. |
-| `POST /auth/verify {email, code}` albo `{link}` | brak | Sprawdza kod lub link (ważność, nieużyty, `attempts < 5`). Błędny kod zwiększa `attempts`. Sukces: oznacza kod jako użyty, tworzy `users` (jeśli brak), tworzy sesję i zwraca `{ session, user: { id, email } }`. Błąd: 401 „Kod jest nieprawidłowy albo wygasł”. |
+| `POST /auth/verify {email, code}` albo `{link}` | brak | Sprawdza kod lub link (ważność, nieużyty, `attempts < 5`). Błędny kod zwiększa `attempts`. Sukces: oznacza kod jako użyty i zwraca `{ setupToken, email }` — jednorazowe prawo do ustawienia hasła przez 15 minut. Błąd: 401 „Kod jest nieprawidłowy albo wygasł”. |
+| `POST /auth/password {setupToken, password}` | brak | Hasło 8–128 znaków (400 przy innym). Tworzy konto, jeśli go brak, albo ustawia nowe hasło istniejącemu (wtedy usuwa jego pozostałe sesje i zdejmuje blokadę). Unieważnia `setupToken`, tworzy sesję i zwraca `{ session, user: { id, email } }`. |
+| `POST /auth/login {email, password}` | brak | Poprawne → sesja jak wyżej, zeruje `failed_logins`; przy słabszych parametrach hasha niż obecne ustawienia przelicza hash. Błędne → `failed_logins + 1`, przy 5 → `locked_until = teraz + 15 min`. Zawsze ten sam komunikat 401 „E-mail lub hasło są nieprawidłowe” (także dla nieistniejącego konta — wtedy liczymy hash na atrapie, żeby czas odpowiedzi nie zdradzał istnienia konta). Zablokowane konto → 429 „Za dużo prób. Spróbuj za kilkanaście minut albo ustaw nowe hasło.” |
 | `POST /auth/logout` | sesja | Usuwa sesję. |
 | `GET /account` | sesja | `{ user, spaces: [{ spaceId, kind, name, role, memberId }] }` — aktywne członkostwa konta. |
 | `POST /account/link {tokens: string[]}` | sesja | Przypina członków z kluczy tego urządzenia do konta (ze scalaniem), zakłada mapę prywatną, jeśli jej brak, i zwraca **pełną listę map konta z kluczem dla tego urządzenia**: `{ spaces: [{ spaceId, kind, name, role, memberId, memberToken }] }`. |
@@ -159,9 +180,19 @@ Wszystko w `env.DB.batch` (jedna transakcja) na każdy krok scalania.
 - Treść po polsku, bez obrazków: „Twój kod do znajdzgroby.pl: **123 456**. Albo kliknij: <link>.
   Kod ważny 15 minut. Jeśli to nie Ty — zignoruj tę wiadomość.”
 
+### Hasła (nowy plik `password.ts`)
+
+- `hashPassword(password, salt, iterations)` — `crypto.subtle.deriveBits` PBKDF2-SHA256, 256 bitów.
+- `PASSWORD_ITERATIONS = 20000` jako stała; przed wdrożeniem zmierzyć na produkcyjnym Workerze, że
+  `POST /auth/login` mieści się w limicie CPU (w Wedding Plannerze: 50 000 iteracji ≈ 10 ms).
+- Porównanie hashy w stałym czasie (`crypto.subtle.timingSafeEqual`).
+- Przy logowaniu: jeśli zapisane `password_algo`/`password_iterations` są słabsze niż obecne ustawienia,
+  hash jest przeliczany i zapisywany (ścieżka na przyszły płatny plan, bez udziału użytkownika).
+
 ### Bezpieczeństwo
 
-- Kod: 6 cyfr z `crypto.getRandomValues`. Link: 32 bajty base64url. W bazie tylko SHA-256.
+- Kod: 6 cyfr z `crypto.getRandomValues`. Link i `setupToken`: 32 bajty base64url. W bazie tylko SHA-256.
+- Hasło: tylko hash PBKDF2 z solą; nigdy w logach ani odpowiedziach.
 - Limity: 5 próśb o kod na adres na godzinę, 5 błędnych prób na kod, ważność 15 minut, jedno użycie.
 - E-mail: przycięty, małe litery, prosta walidacja `x@y.z`, najwyżej 254 znaki.
 - Sesja: 365 dni od ostatniego użycia; `last_seen_at` i `expires_at` aktualizowane najwyżej raz na dobę.
@@ -179,9 +210,10 @@ Wszystko w `env.DB.batch` (jedna transakcja) na każdy krok scalania.
 
 ### `AccountService` (nowy) i przepływ logowania
 
-1. `requestCode(email)` → `POST /auth/request`.
-2. `verify({email, code} | {link})` → zapis sesji.
-3. `link()`:
+1. `login(email, password)` → `POST /auth/login` → zapis sesji.
+2. Zakładanie konta i nowe hasło: `requestCode(email)` → `POST /auth/request`; `verify({email, code} | {link})`
+   → `setupToken`; `setPassword(setupToken, password)` → `POST /auth/password` → zapis sesji.
+3. `link()` (po każdym udanym zalogowaniu albo ustawieniu hasła):
    - wysyła klucze członka wszystkich map z `memberToken` (pomija `needs-profile` i `removed`);
    - dla każdej mapy z odpowiedzi: jeśli w telefonie jest mapa o tym `serverId`, aktualizuje jej
      `memberToken`, `memberId`, `role` i `name`; w przeciwnym razie dodaje nową (`rev = 0`, pobierze
@@ -199,9 +231,13 @@ innym urządzeniu (np. dołączenie do mapy żony z laptopa) pojawiły się i tu
 
 ### Ekrany
 
-- **`/logowanie`**: e-mail → „Wyślij kod” → pole na 6 cyfr („Wpisz kod z maila”, „Wyślij ponownie”
-  po 60 s). Wejście z linku (`/logowanie#<link>`) loguje samo i czyści adres z paska. Po sukcesie
-  komunikat „Przenoszę X grobów i Y zdjęć na konto…”, a potem Start.
+- **`/logowanie`** — trzy kroki na jednym ekranie:
+  - „Zaloguj się”: e-mail, hasło (z przyciskiem pokaż/ukryj), „Zaloguj”; pod spodem „Nie pamiętam
+    hasła” i „Nie mam konta — załóż”;
+  - „Załóż konto” / „Nie pamiętam hasła”: e-mail → „Wyślij kod” → pole na 6 cyfr („Wyślij ponownie”
+    po 60 s) → „Ustaw hasło” (jedno pole z pokaż/ukryj, licznik „min. 8 znaków”);
+  - wejście z linku (`/logowanie#<link>`) od razu przechodzi do „Ustaw hasło” i czyści adres z paska.
+  Po sukcesie komunikat „Przenoszę X grobów i Y zdjęć na konto…”, a potem Start.
 - **Ustawienia → „Konto”** (pierwsza sekcja):
   - bez sesji: „Zaloguj się, żeby mieć groby na każdym urządzeniu” → `/logowanie`;
   - z sesją: e-mail i „Wyloguj” (z potwierdzeniem).
@@ -232,15 +268,22 @@ innym urządzeniu (np. dołączenie do mapy żony z laptopa) pojawiły się i tu
 - **Test dymny API** (`npm run smoke`, lokalnie z `MAIL_MODE=log`, kod z pola `dev` odpowiedzi):
   - prośba o kod (zawsze 202), zły kod (401, licznik prób), 6. próba (401 nawet z dobrym kodem),
     wygasły kod, link jednorazowy, limit 5 próśb na godzinę;
+  - ustawienie hasła: za krótkie (400), `setupToken` jednorazowy, nowe konto i nowe hasło istniejącego
+    (stare sesje unieważnione);
+  - logowanie: poprawne, złe hasło i nieistniejące konto dają ten sam 401, blokada po 5 próbach (429),
+    przeliczenie hasha po podniesieniu liczby iteracji;
   - `/account/link`: przypięcie członka, scalenie dwóch członków tej samej osoby (z przejęciem roli
     założyciela), pominięcie członka innego konta, mapa prywatna tworzona raz;
   - blokady mapy `personal` (403); `/join` z `X-Session` nie tworzy duplikatu;
   - obecne zachowanie (dotychczasowe sekcje testu dymnego) bez zmian.
 - **Vitest:** czysta logika łączenia odpowiedzi `/account/link` z mapami w telefonie (dopasowanie po
-  `serverId`, nowe mapy, mapa prywatna), normalizacja e-maila, decyzja o pokazaniu paska na Starcie.
+  `serverId`, nowe mapy, mapa prywatna), normalizacja e-maila, walidacja hasła w formularzu, decyzja
+  o pokazaniu paska na Starcie.
 - **E2E (Playwright, lokalny Worker, dwa konteksty):**
-  - telefon A z grobami w „Moje” i mapą rodzinną loguje się → groby i zdjęcia na serwerze;
-  - kontekst B loguje się tym samym kontem → widzi „Moje” ze zdjęciami i mapę rodzinną;
+  - telefon A z grobami w „Moje” i mapą rodzinną zakłada konto (kod + hasło) → groby i zdjęcia
+    na serwerze;
+  - kontekst B loguje się tym samym e-mailem i hasłem → widzi „Moje” ze zdjęciami i mapę rodzinną;
+  - „Nie pamiętam hasła” w kontekście B → nowe hasło; sesja w kontekście A wygasa;
   - kontekst C był członkiem tej samej mapy bez konta → po zalogowaniu jeden członek zamiast dwóch;
   - wylogowanie czyści dane konta z przeglądarki, a ponowne zalogowanie je przywraca.
 
@@ -250,6 +293,11 @@ innym urządzeniu (np. dołączenie do mapy żony z laptopa) pojawiły się i tu
   śledzących, „Wyślij ponownie”, kod widoczny już w temacie maila.
 - **Limit Resend (100 maili na dobę).** Przy rodzinie wystarcza z dużym zapasem. Przekroczenie →
   503 z komunikatem; dane i synchronizacja działają dalej.
+- **Słabsze hashowanie haseł na darmowym planie** (20 tys. iteracji zamiast zalecanych 600 tys.).
+  Przy wycieku bazy proste hasła dałoby się łamać szybciej. Mitygacja: minimum 8 znaków, blokada prób,
+  w bazie tylko hashe, przeliczenie na mocniejsze automatycznie po przejściu na płatny plan.
+- **Zapomniane hasło bez dostępu do maila** = brak dostępu do konta (dane i tak zostają w telefonie
+  i na serwerze; założyciel mapy może dodać osobę ponownie przez zaproszenie).
 - **Wylogowanie z niewysłanymi zmianami.** Mitygacja: ostrzeżenie i blokada, dopóki kolejka nie
   jest pusta (albo świadome potwierdzenie).
 - **Scalenie dwóch członków różnych osób dzielących jedno konto e-mail.** To świadomy wybór: konto =
