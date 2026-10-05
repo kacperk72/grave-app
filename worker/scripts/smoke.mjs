@@ -12,11 +12,21 @@ async function call(method, path, { token, body } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(API + path, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  // `wrangler d1 execute` obok `wrangler dev` potrafi na chwilę przeładować Workera — ponów przy błędzie sieci
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(API + path, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      break;
+    } catch (err) {
+      if (attempt >= 4) throw err;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
   const data = await res.json().catch(() => null);
   return { status: res.status, data };
 }
