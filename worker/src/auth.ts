@@ -6,6 +6,7 @@ export interface Space {
   id: string;
   rev: number;
   name: string;
+  kind: 'family' | 'personal';
 }
 
 export interface Member {
@@ -36,9 +37,11 @@ export async function authenticate(request: Request, env: Env): Promise<Session>
   const hash = await sha256(token);
 
   const row = await env.DB.prepare(
-    `SELECT m.id, m.space_id, m.name, m.color, m.role, m.removed_at, s.rev, s.name AS space_name
-       FROM members m JOIN spaces s ON s.id = m.space_id
-      WHERE m.token_hash = ?`
+    `SELECT m.id, m.space_id, m.name, m.color, m.role, m.removed_at, s.rev, s.name AS space_name, s.kind
+       FROM member_tokens t
+       JOIN members m ON m.id = t.member_id
+       JOIN spaces s ON s.id = m.space_id
+      WHERE t.token_hash = ?`
   )
     .bind(hash)
     .first<{
@@ -50,6 +53,7 @@ export async function authenticate(request: Request, env: Env): Promise<Session>
       removed_at: number | null;
       rev: number;
       space_name: string;
+      kind: 'family' | 'personal';
     }>();
 
   if (row) {
@@ -59,14 +63,15 @@ export async function authenticate(request: Request, env: Env): Promise<Session>
     }
     await touch(env, row.space_id, row.id);
     return {
-      space: { id: row.space_id, rev: row.rev, name: row.space_name },
+      space: { id: row.space_id, rev: row.rev, name: row.space_name, kind: row.kind },
       member: { id: row.id, spaceId: row.space_id, name: row.name, color: row.color, role: row.role },
     };
   }
 
   if (env.ALLOW_INVITE_AS_MEMBER !== 'false') {
     const space = await findSpaceByInvite(env, hash);
-    if (space) {
+    // Mapa prywatna nie ma zaproszeń — jej losowy klucz zaproszenia nie daje dostępu
+    if (space && space.kind !== 'personal') {
       await touch(env, space.id, null);
       return { space, member: null };
     }
@@ -79,7 +84,9 @@ export async function authenticate(request: Request, env: Env): Promise<Session>
 export async function spaceFromInvite(request: Request, env: Env): Promise<Space> {
   const token = bearer(request);
   const space = token ? await findSpaceByInvite(env, await sha256(token)) : null;
-  if (!space) throw new HttpError(401, 'Link do rodzinnej mapy jest nieaktualny');
+  if (!space || space.kind === 'personal') {
+    throw new HttpError(401, 'Link do rodzinnej mapy jest nieaktualny');
+  }
   return space;
 }
 
@@ -97,7 +104,7 @@ export function requireOwner(session: Session): Member {
 }
 
 function findSpaceByInvite(env: Env, hash: string): Promise<Space | null> {
-  return env.DB.prepare('SELECT id, rev, name FROM spaces WHERE token_hash = ?').bind(hash).first<Space>();
+  return env.DB.prepare('SELECT id, rev, name, kind FROM spaces WHERE token_hash = ?').bind(hash).first<Space>();
 }
 
 async function touch(env: Env, spaceId: string, memberId: string | null): Promise<void> {

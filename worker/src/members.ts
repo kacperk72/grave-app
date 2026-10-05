@@ -36,14 +36,23 @@ interface NewMember {
   name: string;
   color: string;
   role: 'owner' | 'member';
+  userId?: string | null;
 }
 
-function insertMember(env: Env, m: NewMember): D1PreparedStatement {
+/** Członek i jego pierwszy klucz urządzenia. `members.token_hash` zostaje wypełnione (powrót do starszej wersji). */
+export function insertMember(env: Env, m: NewMember): D1PreparedStatement[] {
   const now = Date.now();
-  return env.DB.prepare(
-    `INSERT INTO members (id, space_id, token_hash, name, color, role, joined_at, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(m.id, m.spaceId, m.tokenHash, m.name, m.color, m.role, now, now);
+  return [
+    env.DB.prepare(
+      `INSERT INTO members (id, space_id, token_hash, name, color, role, joined_at, last_seen_at, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(m.id, m.spaceId, m.tokenHash, m.name, m.color, m.role, now, now, m.userId ?? null),
+    env.DB.prepare('INSERT INTO member_tokens (token_hash, member_id, created_at) VALUES (?, ?, ?)').bind(
+      m.tokenHash,
+      m.id,
+      now
+    ),
+  ];
 }
 
 export async function createSpace(request: Request, env: Env): Promise<Response> {
@@ -73,7 +82,7 @@ export async function createSpace(request: Request, env: Env): Promise<Response>
   const memberId = crypto.randomUUID();
   await env.DB.batch([
     insertSpace(name),
-    insertMember(env, {
+    ...insertMember(env, {
       id: memberId,
       spaceId,
       tokenHash: await sha256(memberToken),
@@ -127,12 +136,12 @@ export async function joinSpace(request: Request, env: Env, space: Space): Promi
     role: (counts?.owners ?? 0) > 0 ? 'member' : 'owner',
   };
   try {
-    await insertMember(env, member).run();
+    await env.DB.batch(insertMember(env, member));
   } catch (err) {
     // Dwa pierwsze dołączenia naraz: indeks members_one_owner wpuści tylko jednego założyciela
     if (member.role !== 'owner' || !String(err).includes('UNIQUE')) throw err;
     member.role = 'member';
-    await insertMember(env, member).run();
+    await env.DB.batch(insertMember(env, member));
   }
   return json(
     { spaceId: space.id, name: space.name, memberToken, memberId: member.id, role: member.role },

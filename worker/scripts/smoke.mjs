@@ -238,12 +238,29 @@ async function legacyDelete() {
   check('usunięcie mapy używanej przez niepodpisany telefon: 409', del.status === 409, del);
 }
 
+/** Wykonuje zapytanie zmieniające dane w lokalnej D1 (tylko testy lokalne). */
+function sqlRun(query) {
+  execSync(`npx wrangler d1 execute grave-app --local --command "${query}"`, { cwd: workerDir, encoding: 'utf8' });
+}
+
+/** Każdy członek ma klucz urządzenia w member_tokens — także ci sprzed migracji (kopia). */
+async function memberTokens() {
+  const created = await call('POST', '/spaces', { body: { name: 'Klucze', member: { name: 'Ala', color: 'sky' } } });
+  const joined = await call('POST', '/join', { token: created.data.invite, body: { name: 'Ola', color: 'rose' } });
+  check('nowy członek ma klucz w member_tokens', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${joined.data.memberId}'`) === 1);
+  check('założyciel ma klucz w member_tokens', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${created.data.memberId}'`) === 1);
+  const space = await call('GET', '/space', { token: joined.data.memberToken });
+  check('klucz z member_tokens działa', space.status === 200 && space.data.me?.id === joined.data.memberId, space);
+  check('każdy członek ma co najmniej jeden klucz', sql('SELECT COUNT(*) AS n FROM members m WHERE NOT EXISTS (SELECT 1 FROM member_tokens t WHERE t.member_id = m.id)') === 0);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
 await management(session);
 await legacyRotate();
 await legacyDelete();
+await memberTokens();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
