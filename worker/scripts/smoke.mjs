@@ -262,7 +262,7 @@ async function memberTokens() {
   check('założyciel ma klucz w member_tokens', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${created.data.memberId}'`) === 1);
   const space = await call('GET', '/space', { token: joined.data.memberToken });
   check('klucz z member_tokens działa', space.status === 200 && space.data.me?.id === joined.data.memberId, space);
-  check('każdy członek ma co najmniej jeden klucz', sql('SELECT COUNT(*) AS n FROM members m WHERE NOT EXISTS (SELECT 1 FROM member_tokens t WHERE t.member_id = m.id)') === 0);
+  check('każdy aktywny członek ma co najmniej jeden klucz', sql('SELECT COUNT(*) AS n FROM members m WHERE m.removed_at IS NULL AND NOT EXISTS (SELECT 1 FROM member_tokens t WHERE t.member_id = m.id)') === 0);
 }
 
 /** Zakłada konto: kod z odpowiedzi trybu deweloperskiego → hasło → sesja. */
