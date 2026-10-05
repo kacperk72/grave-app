@@ -1,4 +1,4 @@
-import { LocalSpace, SpaceRole, isShared } from '../models/space.model';
+import { LOCAL_SPACE_ID, LocalSpace, SpaceRole, isShared } from '../models/space.model';
 
 /** Mapa konta z odpowiedzi `POST /account/link`. */
 export interface LinkedSpace {
@@ -33,4 +33,13 @@ export function planAccountLink(local: LocalSpace[], linked: LinkedSpace[]): Lin
     if (!known) return { localId: null, fields: { ...fields, name: l.name, rev: 0 } };
     return { localId: known.id, changes: known.status === 'removed' ? { ...fields, rev: 0 } : fields };
   });
+}
+
+/** Po zalogowaniu jedna „Moje”: prywatna mapa konta na początku, lokalna „Moje” ukryta. */
+export function visibleSpaces<T extends Pick<LocalSpace, 'id' | 'kind'>>(all: T[]): T[] {
+  if (!all.some((s) => s.kind === 'personal')) return all;
+  return [
+    ...all.filter((s) => s.kind === 'personal'),
+    ...all.filter((s) => s.kind !== 'personal' && s.id !== LOCAL_SPACE_ID),
+  ];
 }

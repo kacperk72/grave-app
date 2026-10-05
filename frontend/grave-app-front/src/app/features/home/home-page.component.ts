@@ -11,6 +11,9 @@ import { RouterLink } from '@angular/router';
 import { GraveService } from '../graves/services/grave.service';
 import { GeolocationService } from '../../core/services/geolocation.service';
 import { SpaceService } from '../../core/services/space.service';
+import { AccountService } from '../../core/services/account.service';
+import { readStorage, writeStorage } from '../../core/services/storage';
+import { shouldShowLoginBanner } from '../../shared/utils/account-rules';
 import { GravePhoto, GraveWithDistance, SortOption } from '../../shared/models/grave.model';
 import { IconComponent } from '../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../shared/components/grave-photo.component';
@@ -54,6 +57,20 @@ const NEAR_RADIUS_M = 5000;
 export class HomePageComponent {
   readonly graveService = inject(GraveService);
   readonly spaces = inject(SpaceService);
+  readonly account = inject(AccountService);
+
+  private readonly bannerDismissedAt = signal<number | null>(
+    Number(readStorage('znajdzgroby-login-banner')) || null
+  );
+  /** Pasek „Zaloguj się” — gdy są groby tylko w tym telefonie; „Później” chowa go na tydzień. */
+  readonly showLoginBanner = computed(() =>
+    shouldShowLoginBanner({
+      loggedIn: this.account.loggedIn(),
+      graveCount: this.graveService.gravesCount(),
+      dismissedAt: this.bannerDismissedAt(),
+      now: Date.now(),
+    })
+  );
   private readonly geolocation = inject(GeolocationService);
 
   readonly today = capitalize(
@@ -197,6 +214,12 @@ export class HomePageComponent {
     return name.replace(/^cmentarz\s+/i, '');
   }
 
+
+  dismissLoginBanner(): void {
+    const now = Date.now();
+    writeStorage('znajdzgroby-login-banner', String(now));
+    this.bannerDismissedAt.set(now);
+  }
 }
 
 /** „do 14 listopada" albo „termin minął 8 lutego 2024" (rok tylko spoza bieżącego). */

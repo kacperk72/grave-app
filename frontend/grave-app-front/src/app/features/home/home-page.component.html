@@ -12,6 +12,16 @@
     }
   </header>
 
+  @if (showLoginBanner()) {
+  <div class="login-banner" role="status">
+    <p>Zaloguj się, żeby nie stracić grobów przy zmianie telefonu lub przeglądarki.</p>
+    <div class="login-banner__actions">
+      <a class="pill-btn pill-btn--dark" routerLink="/logowanie">Zaloguj się</a>
+      <button type="button" class="pill-btn pill-btn--light" (click)="dismissLoginBanner()">Później</button>
+    </div>
+  </div>
+  }
+
   @if (spaces.readOnly()) {
   <div class="removed" role="status">
     <p>Nie masz już dostępu do mapy „{{ spaces.activeSpace()?.name }}". Groby są tylko do odczytu.</p>

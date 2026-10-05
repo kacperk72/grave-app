@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LinkedSpace, planAccountLink } from './account-link';
+import { LinkedSpace, planAccountLink, visibleSpaces } from './account-link';
 import { LocalSpace, localSpace, newSharedSpace } from '../models/space.model';
 
 const linked = (over: Partial<LinkedSpace>): LinkedSpace => ({
@@ -53,5 +53,18 @@ describe('planAccountLink', () => {
   it('mapy telefonu spoza konta zostają bez zmian', () => {
     const other: LocalSpace = newSharedSpace({ id: 'L2', serverId: 'sX', name: 'Inna' });
     expect(planAccountLink([localSpace(), other], [])).toEqual([]);
+  });
+});
+
+describe('visibleSpaces', () => {
+  it('bez konta: wszystkie mapy w kolejności', () => {
+    const fam = newSharedSpace({ id: 'F', name: 'Rodzina' });
+    expect(visibleSpaces([localSpace(), fam]).map((s) => s.id)).toEqual([localSpace().id, 'F']);
+  });
+
+  it('z mapą prywatną: ona pierwsza, lokalna „Moje” ukryta, rodzinne zostają', () => {
+    const fam = newSharedSpace({ id: 'F', name: 'Rodzina', kind: 'family' });
+    const personal = newSharedSpace({ id: 'P', name: 'Moje', kind: 'personal' });
+    expect(visibleSpaces([localSpace(), fam, personal]).map((s) => s.id)).toEqual(['P', 'F']);
   });
 });

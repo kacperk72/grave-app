@@ -54,6 +54,9 @@ import { markOnboardingSeen } from '../../core/services/onboarding';
         <button type="button" class="import" (click)="importBackup()">
           Mam kopię od rodziny — wczytaj plik
         </button>
+        <button type="button" class="import" (click)="loginExisting()">
+          Mam już konto — zaloguj się
+        </button>
       </div>
     </div>
   `,
@@ -194,6 +197,11 @@ export class WelcomePageComponent {
   start(): void {
     markOnboardingSeen();
     this.router.navigate(['/start']);
+  }
+
+  loginExisting(): void {
+    markOnboardingSeen();
+    this.router.navigate(['/logowanie']);
   }
 
   importBackup(): void {

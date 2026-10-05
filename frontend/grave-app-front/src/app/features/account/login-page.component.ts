@@ -7,6 +7,7 @@ import { ApiError } from '../../core/services/family-api';
 import { markOnboardingSeen } from '../../core/services/onboarding';
 import { IconComponent } from '../../shared/components/icon.component';
 import { normalizeEmail, passwordProblem } from '../../shared/utils/account-rules';
+import { pluralPl } from '../../shared/utils/grave-display';
 
 type Step = 'login' | 'email' | 'code' | 'password' | 'done';
 
@@ -334,7 +335,7 @@ export class LoginPageComponent {
     this.password.set('');
     this.doneText.set(
       res.movedGraves > 0
-        ? `Przenoszę ${res.movedGraves} grobów z „Moje” na konto — zdjęcia wyślą się w tle.`
+        ? `Przenoszę ${res.movedGraves} ${pluralPl(res.movedGraves, 'grób', 'groby', 'grobów')} z „Moje” na konto — zdjęcia wyślą się w tle.`
         : 'Jesteś zalogowany. Twoje mapy są teraz na koncie.',
     );
     this.step.set('done');

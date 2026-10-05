@@ -5,6 +5,37 @@
   </header>
 
   <section class="group">
+    <h2>Konto</h2>
+    <div class="card">
+      @if (account.session(); as s) {
+      <div class="row row--static">
+        <span class="row__icon row__icon--dark"><app-icon name="users" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">{{ s.email }}</span>
+          <span class="row__sub">Groby i zdjęcia są na koncie — zaloguj się na innym urządzeniu, żeby je zobaczyć</span>
+        </span>
+      </div>
+      <button type="button" class="row" (click)="logout()">
+        <span class="row__icon"><app-icon name="logout" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Wyloguj</span>
+          <span class="row__sub">Dane konta znikną z tej przeglądarki, zostają na koncie</span>
+        </span>
+      </button>
+      } @else {
+      <a class="row" routerLink="/logowanie">
+        <span class="row__icon row__icon--dark"><app-icon name="users" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Zaloguj się</span>
+          <span class="row__sub">Żeby mieć groby i zdjęcia na każdym urządzeniu i w każdej przeglądarce</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </a>
+      }
+    </div>
+  </section>
+
+  <section class="group">
     <h2>Rodzinne mapy</h2>
     <div class="card">
       @for (m of mapRows(); track m.id) {
@@ -53,7 +84,7 @@
         <span class="row__icon"><app-icon name="upload" [size]="20" /></span>
         <span class="row__text">
           <span class="row__title">Eksportuj i udostępnij</span>
-          <span class="row__sub">Plik dla rodziny · {{ dataSummary() }}</span>
+          <span class="row__sub">Plik bez zdjęć · {{ dataSummary() }}</span>
         </span>
         <app-icon class="row__chevron" name="chevron-right" [size]="18" />
       </button>
