@@ -2,6 +2,7 @@ import type { Env } from './index';
 import { HttpError, json, readJson } from './http';
 import { newToken, sha256 } from './util';
 import { sendLoginMail } from './mail';
+import { insertMember } from './members';
 import {
   PASSWORD_ALGO,
   PASSWORD_ITERATIONS,
@@ -269,4 +270,127 @@ export async function getAccount(request: Request, env: Env): Promise<Response> 
     .bind(user.id)
     .all();
   return json({ user, spaces: results });
+}
+
+type MemberRow = {
+  id: string;
+  space_id: string;
+  user_id: string | null;
+  role: 'owner' | 'member';
+  joined_at: number;
+};
+
+/**
+ * Scala dwóch członków tej samej osoby w jednej mapie. Zostaje ten, kto dołączył wcześniej;
+ * rola założyciela przechodzi na niego, klucze urządzeń drugiego też. Drugi znika z listy.
+ */
+async function mergeMembers(env: Env, a: MemberRow, b: MemberRow, userId: string): Promise<string> {
+  const [keep, drop] = a.joined_at <= b.joined_at ? [a, b] : [b, a];
+  const now = Date.now();
+  const statements: D1PreparedStatement[] = [];
+  // Kolejność ze względu na indeksy „jeden założyciel” i „jeden członek konta w mapie”
+  if (drop.role === 'owner') {
+    statements.push(env.DB.prepare("UPDATE members SET role = 'member' WHERE id = ?").bind(drop.id));
+  }
+  statements.push(
+    env.DB.prepare('UPDATE members SET removed_at = ?, merged_into = ? WHERE id = ?').bind(now, keep.id, drop.id),
+    env.DB.prepare('UPDATE members SET user_id = ? WHERE id = ?').bind(userId, keep.id)
+  );
+  if (drop.role === 'owner') {
+    statements.push(env.DB.prepare("UPDATE members SET role = 'owner' WHERE id = ?").bind(keep.id));
+  }
+  statements.push(
+    env.DB.prepare('UPDATE member_tokens SET member_id = ? WHERE member_id = ?').bind(keep.id, drop.id)
+  );
+  await env.DB.batch(statements);
+  return keep.id;
+}
+
+async function ensurePersonalSpace(env: Env, user: User): Promise<void> {
+  const existing = await env.DB.prepare("SELECT id FROM spaces WHERE kind = 'personal' AND owner_user_id = ?")
+    .bind(user.id)
+    .first();
+  if (existing) return;
+  const spaceId = crypto.randomUUID();
+  const now = Date.now();
+  try {
+    await env.DB.batch([
+      // Losowy, nigdzie nieujawniany klucz zaproszenia — mapa prywatna nie ma zaproszeń
+      env.DB.prepare(
+        `INSERT INTO spaces (id, token_hash, rev, created_at, last_seen_at, name, kind, owner_user_id)
+         VALUES (?, ?, 0, ?, ?, 'Moje', 'personal', ?)`
+      ).bind(spaceId, await sha256(newToken()), now, now, user.id),
+      ...insertMember(env, {
+        id: crypto.randomUUID(),
+        spaceId,
+        tokenHash: await sha256(newToken()),
+        name: user.email.split('@')[0].slice(0, 40) || 'Ja',
+        color: 'slate',
+        role: 'owner',
+        userId: user.id,
+      }),
+    ]);
+  } catch (err) {
+    // Dwa równoległe link() — indeks spaces_one_personal wpuścił tylko pierwsze
+    if (!String(err).includes('UNIQUE')) throw err;
+  }
+}
+
+/** Przypina klucze tego urządzenia do konta i zwraca wszystkie mapy konta z kluczem dla urządzenia. */
+export async function linkAccount(request: Request, env: Env): Promise<Response> {
+  const user = await requireUser(request, env);
+  const body = (await readJson(request)) as { tokens?: unknown } | null;
+  const tokens = Array.isArray(body?.tokens)
+    ? body.tokens.filter((t): t is string => typeof t === 'string' && t.length > 0).slice(0, 50)
+    : [];
+
+  const deviceToken = new Map<string, string>(); // memberId → klucz tego urządzenia
+  for (const token of tokens) {
+    const m = await env.DB.prepare(
+      `SELECT m.id, m.space_id, m.user_id, m.role, m.joined_at
+         FROM member_tokens t JOIN members m ON m.id = t.member_id JOIN spaces s ON s.id = m.space_id
+        WHERE t.token_hash = ? AND m.removed_at IS NULL AND s.kind = 'family'`
+    )
+      .bind(await sha256(token))
+      .first<MemberRow>();
+    if (!m || (m.user_id && m.user_id !== user.id)) continue; // brak albo cudzy członek
+    let keepId = m.id;
+    if (!m.user_id) {
+      const e = await env.DB.prepare(
+        'SELECT id, space_id, user_id, role, joined_at FROM members WHERE space_id = ? AND user_id = ? AND removed_at IS NULL'
+      )
+        .bind(m.space_id, user.id)
+        .first<MemberRow>();
+      if (e) {
+        keepId = await mergeMembers(env, e, m, user.id);
+      } else {
+        await env.DB.prepare('UPDATE members SET user_id = ? WHERE id = ?').bind(user.id, m.id).run();
+      }
+    }
+    deviceToken.set(keepId, token);
+  }
+
+  await ensurePersonalSpace(env, user);
+
+  const { results } = await env.DB.prepare(
+    `SELECT s.id AS spaceId, s.kind, s.name, m.role, m.id AS memberId
+       FROM members m JOIN spaces s ON s.id = m.space_id
+      WHERE m.user_id = ? AND m.removed_at IS NULL
+      ORDER BY s.kind = 'personal' DESC, m.joined_at`
+  )
+    .bind(user.id)
+    .all<{ spaceId: string; kind: string; name: string; role: string; memberId: string }>();
+
+  const spaces = [];
+  for (const row of results) {
+    let memberToken = deviceToken.get(row.memberId);
+    if (!memberToken) {
+      memberToken = newToken();
+      await env.DB.prepare('INSERT INTO member_tokens (token_hash, member_id, created_at) VALUES (?, ?, ?)')
+        .bind(await sha256(memberToken), row.memberId, Date.now())
+        .run();
+    }
+    spaces.push({ ...row, memberToken });
+  }
+  return json({ spaces });
 }

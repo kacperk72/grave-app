@@ -40,7 +40,7 @@ import {
   updateMe,
 } from './members';
 import { purgePhotos } from './purge';
-import { getAccount, login, logout, requestCode, setPassword, verifyCode } from './accounts';
+import { getAccount, linkAccount, login, logout, requestCode, setPassword, verifyCode } from './accounts';
 
 export interface Env {
   DB: D1Database;
@@ -131,6 +131,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === 'POST' && path === '/auth/login') return login(request, env);
   if (request.method === 'POST' && path === '/auth/logout') return logout(request, env);
   if (request.method === 'GET' && path === '/account') return getAccount(request, env);
+  if (request.method === 'POST' && path === '/account/link') return linkAccount(request, env);
 
   const session = await authenticate(request, env);
   const space = session.space;

@@ -8,8 +8,8 @@ const API = process.env.API ?? 'http://localhost:8791';
 const workerDir = fileURLToPath(new URL('..', import.meta.url));
 let failed = 0;
 
-async function call(method, path, { token, body } = {}) {
-  const headers = {};
+async function call(method, path, { token, body, headers: extra } = {}) {
+  const headers = { ...(extra ?? {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   // `wrangler d1 execute` obok `wrangler dev` potrafi na chwilę przeładować Workera — ponów przy błędzie sieci
@@ -348,6 +348,68 @@ async function accounts() {
   check('wylogowanie', out.status === 200 && afterOut.status === 401, afterOut);
 }
 
+/** Przypinanie kluczy urządzeń do konta, mapa prywatna, scalanie duplikatów, blokady mapy prywatnej. */
+async function accountLink() {
+  const u = await register(`u-${Date.now()}@example.com`, 'dobrehaslo1');
+
+  // Mapa rodzinna założona bez konta (A = założyciel) + B dołącza bez konta
+  const fam = await call('POST', '/spaces', { body: { name: 'Rodzina L', member: { name: 'Kacper', color: 'clay' } } });
+  const b = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Bartek', color: 'sky' } });
+
+  const l1 = await call('POST', '/account/link', { token: u, body: { tokens: [fam.data.memberToken] } });
+  const famRow = l1.data?.spaces?.find((x) => x.spaceId === fam.data.spaceId);
+  const personal = l1.data?.spaces?.find((x) => x.kind === 'personal');
+  check('przypięcie: mapa rodzinna i prywatna', l1.status === 200 && famRow?.memberId === fam.data.memberId && famRow?.memberToken === fam.data.memberToken && personal?.name === 'Moje', l1);
+  check('mapa prywatna pierwsza', l1.data?.spaces?.[0]?.kind === 'personal', l1.data?.spaces);
+
+  const before = sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${fam.data.memberId}'`);
+  const tokensNow = (l1.data?.spaces ?? []).map((x) => x.memberToken);
+  const l2 = await call('POST', '/account/link', { token: u, body: { tokens: tokensNow } });
+  check('ponowne link() z tego samego urządzenia nie mnoży kluczy', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${fam.data.memberId}'`) === before && l2.data?.spaces?.length === 2, l2);
+
+  const l3 = await call('POST', '/account/link', { token: u, body: { tokens: [] } });
+  const fam3 = l3.data?.spaces?.find((x) => x.spaceId === fam.data.spaceId);
+  check('nowe urządzenie: ten sam członek, nowy klucz', fam3?.memberId === fam.data.memberId && fam3?.memberToken !== fam.data.memberToken, l3);
+  const viaNew = await call('GET', '/space', { token: fam3?.memberToken });
+  check('nowy klucz urządzenia działa', viaNew.status === 200 && viaNew.data.me?.id === fam.data.memberId, viaNew);
+  check('mapa prywatna tworzona raz', (l3.data?.spaces ?? []).filter((x) => x.kind === 'personal').length === 1 && l3.data.spaces.find((x) => x.kind === 'personal').spaceId === personal?.spaceId);
+
+  // Duplikat: ta sama osoba dołączyła drugi raz bez konta → scalenie przy link()
+  const dup = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Kacper', color: 'sage' } });
+  await call('POST', '/account/link', { token: u, body: { tokens: [dup.data.memberToken] } });
+  const members = await call('GET', '/members', { token: b.data.memberToken });
+  check('scalenie: duplikat znika z listy członków', members.data?.members?.length === 2, members.data);
+  const dupNow = await call('GET', '/space', { token: dup.data.memberToken });
+  check('klucz duplikatu wskazuje teraz scalonego członka', dupNow.data?.me?.id === fam.data.memberId && dupNow.data.me.role === 'owner', dupNow);
+
+  // Scalenie z przejęciem roli założyciela: E (konto, dołączył wcześniej) + O (później, założyciel po przekazaniu)
+  const f3 = await call('POST', '/spaces', { body: { name: 'Rodzina R', member: { name: 'Celina', color: 'moss' } } });
+  const e = await call('POST', '/join', { token: f3.data.invite, headers: { 'X-Session': u }, body: { name: 'Kacper', color: 'clay' } });
+  const o = await call('POST', '/join', { token: f3.data.invite, body: { name: 'Kacper', color: 'sky' } });
+  await call('POST', `/members/${o.data.memberId}/owner`, { token: f3.data.memberToken });
+  await call('POST', '/account/link', { token: u, body: { tokens: [o.data.memberToken] } });
+  const merged = await call('GET', '/space', { token: o.data.memberToken });
+  check('scalenie przenosi rolę założyciela na zachowanego członka', merged.data?.me?.id === e.data.memberId && merged.data.me.role === 'owner', merged);
+
+  // Dołączenie z sesją, gdy konto już jest w mapie → bez duplikatu
+  const again = await call('POST', '/join', { token: f3.data.invite, headers: { 'X-Session': u }, body: { name: 'Kacper', color: 'clay' } });
+  check('dołączenie z sesją: istniejący członek, nowy klucz', again.status === 201 && again.data.memberId === e.data.memberId, again);
+
+  // Cudzy członek nie jest przejmowany
+  const v = await register(`v-${Date.now()}@example.com`, 'dobrehaslo1');
+  const lv = await call('POST', '/account/link', { token: v, body: { tokens: [fam.data.memberToken] } });
+  check('klucz członka innego konta nie jest przejmowany', lv.data?.spaces?.length === 1 && lv.data.spaces[0].kind === 'personal', lv);
+
+  // Mapa prywatna: bez zaproszeń, wyjścia i usuwania
+  const p = (l1.data?.spaces ?? []).find((x) => x.kind === 'personal')?.memberToken;
+  for (const [method, path] of [['POST', '/space/rotate'], ['POST', '/space/leave'], ['DELETE', '/space']]) {
+    const res = await call(method, path, { token: p });
+    check(`mapa prywatna: ${method} ${path} → 403`, res.status === 403, res);
+  }
+  const unlinked = await call('POST', '/account/link', { token: 'zla-sesja', body: { tokens: [] } });
+  check('link bez ważnej sesji: 401', unlinked.status === 401, unlinked);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
@@ -356,6 +418,7 @@ await legacyRotate();
 await legacyDelete();
 await memberTokens();
 await accounts();
+await accountLink();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
