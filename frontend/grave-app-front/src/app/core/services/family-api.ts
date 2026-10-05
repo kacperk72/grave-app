@@ -4,6 +4,7 @@ import { environment } from '../../../environments/environment';
 import { Grave, PhotoVariant } from '../../shared/models/grave.model';
 import { Member, Profile, SpaceRole } from '../../shared/models/space.model';
 import { RemoteChange } from './indexeddb.service';
+import { LinkedSpace } from '../../shared/utils/account-link';
 
 export class ApiError extends Error {
   constructor(
@@ -35,6 +36,11 @@ export interface CreatedSpace extends JoinResult {
   invite: string;
 }
 
+export interface AuthResult {
+  session: string;
+  user: { id: string; email: string };
+}
+
 export interface PullResponse {
   rev: number;
   more: boolean;
@@ -54,9 +60,10 @@ export class FamilyApi {
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
     path: string,
     token: string | null,
-    body?: unknown
+    body?: unknown,
+    extraHeaders: Record<string, string> = {}
   ): Promise<T> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extraHeaders };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const res = await fetch(this.base + path, {
@@ -104,8 +111,36 @@ export class FamilyApi {
     return this.request('GET', '/invite', invite);
   }
 
-  join(invite: string, profile: Profile): Promise<JoinResult> {
-    return this.request('POST', '/join', invite, profile);
+  /** Z sesją konta członek jest przypinany do konta (bez duplikatu, jeśli konto już jest w mapie). */
+  join(invite: string, profile: Profile, session?: string): Promise<JoinResult> {
+    return this.request('POST', '/join', invite, profile, session ? { 'X-Session': session } : {});
+  }
+
+  authRequest(email: string): Promise<{ ok: true }> {
+    return this.request('POST', '/auth/request', null, { email });
+  }
+
+  authVerify(
+    body: { email: string; code: string } | { link: string }
+  ): Promise<{ setupToken: string; email: string }> {
+    return this.request('POST', '/auth/verify', null, body);
+  }
+
+  authPassword(setupToken: string, password: string): Promise<AuthResult> {
+    return this.request('POST', '/auth/password', null, { setupToken, password });
+  }
+
+  authLogin(email: string, password: string): Promise<AuthResult> {
+    return this.request('POST', '/auth/login', null, { email, password });
+  }
+
+  authLogout(session: string): Promise<unknown> {
+    return this.request('POST', '/auth/logout', session);
+  }
+
+  async accountLink(session: string, tokens: string[]): Promise<LinkedSpace[]> {
+    return (await this.request<{ spaces: LinkedSpace[] }>('POST', '/account/link', session, { tokens }))
+      .spaces;
   }
 
   spaceInfo(token: string): Promise<{ spaceId: string; name: string; graves: number }> {

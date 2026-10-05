@@ -3,6 +3,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { ACTIVE_SPACE_KEY, IndexedDbService } from './indexeddb.service';
 import { FamilyApi, InvitePreview } from './family-api';
 import { writeProfile } from './profile';
+import { readSession } from './session';
 import { readStorage, removeStorage, writeStorage } from './storage';
 import {
   LOCAL_SPACE_ID,
@@ -186,7 +187,7 @@ export class SpaceService {
       this.setActive(known.id);
       return known;
     }
-    const res = await this.api.join(invite, profile);
+    const res = await this.api.join(invite, profile, readSession()?.token);
     const fields: Partial<LocalSpace> = {
       serverId: res.spaceId,
       name: res.name,
