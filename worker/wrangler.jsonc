@@ -13,7 +13,11 @@
     "ALLOWED_ORIGINS": "https://znajdzgroby.pl,https://www.znajdzgroby.pl,https://darkgrey-octopus-623910.hostingersite.com",
     // Klucz z linku zaproszenia działa też jako klucz członka — dla wersji aplikacji
     // sprzed list członków. Wyłączyć ("false"), gdy wszyscy mają wpis w `members`.
-    "ALLOW_INVITE_AS_MEMBER": "true"
+    "ALLOW_INVITE_AS_MEMBER": "true",
+    // Adres aplikacji w linkach z maili (lokalnie nadpisywany w `npm run dev`)
+    "APP_URL": "https://znajdzgroby.pl",
+    // Wysyłka maili: "resend" (produkcja, sekret RESEND_API_KEY) albo "log" (tylko lokalnie)
+    "MAIL_MODE": "resend"
   },
   "d1_databases": [
     {

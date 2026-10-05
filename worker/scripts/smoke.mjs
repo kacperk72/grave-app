@@ -1,6 +1,7 @@
 // Test dymny API rodzinnej mapy na LOKALNYM Workerze.
 // Uruchom `npm run dev` (port 8791), potem `npm run smoke`. Nigdy na produkcji.
 import { execSync } from 'node:child_process';
+import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const API = process.env.API ?? 'http://localhost:8791';
@@ -254,6 +255,89 @@ async function memberTokens() {
   check('każdy członek ma co najmniej jeden klucz', sql('SELECT COUNT(*) AS n FROM members m WHERE NOT EXISTS (SELECT 1 FROM member_tokens t WHERE t.member_id = m.id)') === 0);
 }
 
+/** Zakłada konto: kod z odpowiedzi trybu deweloperskiego → hasło → sesja. */
+async function register(email, password) {
+  const req = await call('POST', '/auth/request', { body: { email } });
+  const ver = await call('POST', '/auth/verify', { body: { email, code: req.data?.dev?.code } });
+  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password } });
+  return set.data?.session;
+}
+
+/** Zakładanie konta, logowanie, blokada, nowe hasło, wylogowanie. */
+async function accounts() {
+  const email = `ala-${Date.now()}@example.com`;
+  const bad = await call('POST', '/auth/request', { body: { email: 'zly-adres' } });
+  check('zły e-mail: 400', bad.status === 400, bad);
+
+  const r1 = await call('POST', '/auth/request', { body: { email } });
+  check('prośba o kod: 202 + kod w trybie deweloperskim', r1.status === 202 && /^\d{6}$/.test(r1.data?.dev?.code ?? ''), r1);
+  const code = r1.data?.dev?.code ?? '';
+  const wrongCode = code === '000000' ? '111111' : '000000';
+  const wrong = await call('POST', '/auth/verify', { body: { email, code: wrongCode } });
+  check('zły kod: 401', wrong.status === 401, wrong);
+  const ver = await call('POST', '/auth/verify', { body: { email: ` ${email.toUpperCase()} `, code } });
+  check('dobry kod (e-mail z wielkich liter i spacjami): setupToken', ver.status === 200 && typeof ver.data?.setupToken === 'string', ver);
+  const again = await call('POST', '/auth/verify', { body: { email, code } });
+  check('kod jednorazowy: 401', again.status === 401, again);
+
+  const short = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'krotkie' } });
+  check('hasło krótsze niż 8 znaków: 400', short.status === 400, short);
+  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'dobrehaslo1' } });
+  check('ustawienie hasła: sesja', set.status === 200 && typeof set.data?.session === 'string' && set.data.user?.email === email, set);
+  const reuseSetup = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'innehaslo1' } });
+  check('setupToken jednorazowy: 401', reuseSetup.status === 401, reuseSetup);
+
+  const acc = await call('GET', '/account', { token: set.data?.session });
+  check('GET /account z sesją', acc.status === 200 && acc.data?.user?.email === email, acc);
+
+  const badPw = await call('POST', '/auth/login', { body: { email, password: 'zlehaslo00' } });
+  const noUser = await call('POST', '/auth/login', { body: { email: `nikt-${Date.now()}@example.com`, password: 'dobrehaslo1' } });
+  check('złe hasło i brak konta: ten sam 401', badPw.status === 401 && noUser.status === 401 && badPw.data?.error === noUser.data?.error, [badPw, noUser]);
+  const okLogin = await call('POST', '/auth/login', { body: { email: email.toUpperCase(), password: 'dobrehaslo1' } });
+  check('logowanie (wielkie litery w e-mailu)', okLogin.status === 200 && typeof okLogin.data?.session === 'string', okLogin);
+
+  // Przeliczenie hasha po podniesieniu liczby iteracji
+  // Prawdziwy hash z 1000 iteracji (jak zapisany kiedyś słabszymi ustawieniami)
+  const weakSalt = randomBytes(16);
+  const weakHash = pbkdf2Sync('dobrehaslo1', weakSalt, 1000, 32, 'sha256').toString('base64');
+  sqlRun(`UPDATE users SET password_hash = '${weakHash}', password_salt = '${weakSalt.toString('base64')}', password_iterations = 1000 WHERE email = '${email}'`);
+  await call('POST', '/auth/login', { body: { email, password: 'dobrehaslo1' } });
+  check('słabszy hash przeliczony przy logowaniu', sql(`SELECT password_iterations AS n FROM users WHERE email = '${email}'`) === 20000);
+
+  for (let i = 0; i < 5; i++) await call('POST', '/auth/login', { body: { email, password: 'zlehaslo00' } });
+  const locked = await call('POST', '/auth/login', { body: { email, password: 'dobrehaslo1' } });
+  check('blokada po 5 złych hasłach: 429', locked.status === 429, locked);
+
+  // Nowe hasło: zdejmuje blokadę i wylogowuje inne urządzenia
+  const r2 = await call('POST', '/auth/request', { body: { email } });
+  const link = (r2.data?.dev?.link ?? '').split('#')[1];
+  const ver2 = await call('POST', '/auth/verify', { body: { link } });
+  check('potwierdzenie linkiem', ver2.status === 200 && typeof ver2.data?.setupToken === 'string', ver2);
+  const reset = await call('POST', '/auth/password', { body: { setupToken: ver2.data?.setupToken, password: 'nowehaslo22' } });
+  check('nowe hasło: sesja', reset.status === 200, reset);
+  const oldSession = await call('GET', '/account', { token: set.data?.session });
+  check('nowe hasło wylogowuje inne urządzenia', oldSession.status === 401, oldSession);
+  const loginNew = await call('POST', '/auth/login', { body: { email, password: 'nowehaslo22' } });
+  check('logowanie nowym hasłem po blokadzie', loginNew.status === 200, loginNew);
+
+  // 5 złych kodów unieważnia kod
+  const r3 = await call('POST', '/auth/request', { body: { email } });
+  const c3 = r3.data?.dev?.code ?? '';
+  for (let i = 0; i < 5; i++) await call('POST', '/auth/verify', { body: { email, code: c3 === '000000' ? '111111' : '000000' } });
+  const afterAttempts = await call('POST', '/auth/verify', { body: { email, code: c3 } });
+  check('po 5 złych kodach dobry kod nie działa', afterAttempts.status === 401, afterAttempts);
+
+  // Limit 5 próśb o kod na godzinę (r1, r2, r3 + 2 = 5; szósta bez wysyłki)
+  await call('POST', '/auth/request', { body: { email } });
+  await call('POST', '/auth/request', { body: { email } });
+  const limited = await call('POST', '/auth/request', { body: { email } });
+  check('limit próśb: 202 bez kodu', limited.status === 202 && !limited.data?.dev, limited);
+
+  const out = await call('POST', '/auth/logout', { token: loginNew.data?.session });
+  const afterOut = await call('GET', '/account', { token: loginNew.data?.session });
+  check('wylogowanie', out.status === 200 && afterOut.status === 401, afterOut);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
@@ -261,6 +345,7 @@ await management(session);
 await legacyRotate();
 await legacyDelete();
 await memberTokens();
+await accounts();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
