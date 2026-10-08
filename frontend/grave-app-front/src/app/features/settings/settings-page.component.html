@@ -73,6 +73,43 @@
   </section>
 
   <section class="group">
+    <h2>Bez internetu</h2>
+    <div class="card">
+      <div class="row row--static">
+        <span class="row__icon"><app-icon name="cloud" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Praca offline</span>
+          <span class="row__sub">{{
+            spaces.sharedSpaces().length > 0
+              ? 'Zmiany bez zasięgu wyślą się, gdy wróci internet'
+              : 'Mapa i groby są zapisane na urządzeniu'
+          }}</span>
+        </span>
+        <span class="tag tag--on">Aktywna</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2 id="theme-label">Wygląd</h2>
+    <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
+      @for (opt of themeOptions; track opt.value) {
+      <button
+        type="button"
+        role="radio"
+        [class.active]="theme.preference() === opt.value"
+        [attr.aria-checked]="theme.preference() === opt.value"
+        (click)="theme.set(opt.value)"
+      >
+        {{ opt.label }}
+      </button>
+      }
+    </div>
+  </section>
+
+  <!-- Bez konta plik to jedyna kopia poza przeglądarką; z kontem groby i zdjęcia są na serwerze -->
+  @if (!account.loggedIn()) {
+  <section class="group">
     <h2>Twoje dane</h2>
     <div class="card">
       <button
@@ -122,41 +159,7 @@
     </div>
     }
   </section>
-
-  <section class="group">
-    <h2>Bez internetu</h2>
-    <div class="card">
-      <div class="row row--static">
-        <span class="row__icon"><app-icon name="cloud" [size]="20" /></span>
-        <span class="row__text">
-          <span class="row__title">Praca offline</span>
-          <span class="row__sub">{{
-            spaces.sharedSpaces().length > 0
-              ? 'Zmiany bez zasięgu wyślą się, gdy wróci internet'
-              : 'Mapa i groby są zapisane na urządzeniu'
-          }}</span>
-        </span>
-        <span class="tag tag--on">Aktywna</span>
-      </div>
-    </div>
-  </section>
-
-  <section class="group">
-    <h2 id="theme-label">Wygląd</h2>
-    <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
-      @for (opt of themeOptions; track opt.value) {
-      <button
-        type="button"
-        role="radio"
-        [class.active]="theme.preference() === opt.value"
-        [attr.aria-checked]="theme.preference() === opt.value"
-        (click)="theme.set(opt.value)"
-      >
-        {{ opt.label }}
-      </button>
-      }
-    </div>
-  </section>
+  }
 
   @if (version()) {
   <p class="version">znajdzgroby.pl · wersja {{ version() }}</p>

@@ -51,9 +51,6 @@ import { markOnboardingSeen } from '../../core/services/onboarding';
           Zaczynamy
           <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
         </button>
-        <button type="button" class="import" (click)="importBackup()">
-          Mam kopię od rodziny — wczytaj plik
-        </button>
         <button type="button" class="import" (click)="loginExisting()">
           Mam już konto — zaloguj się
         </button>
@@ -202,10 +199,5 @@ export class WelcomePageComponent {
   loginExisting(): void {
     markOnboardingSeen();
     this.router.navigate(['/logowanie']);
-  }
-
-  importBackup(): void {
-    markOnboardingSeen();
-    this.router.navigate(['/settings']);
   }
 }
