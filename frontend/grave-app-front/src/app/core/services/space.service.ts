@@ -187,8 +187,11 @@ export class SpaceService {
       this.setActive(known.id);
       return known;
     }
-    const res = await this.api.join(invite, profile, readSession()?.token);
+    const session = readSession()?.token;
+    const res = await this.api.join(invite, profile, session);
     const fields: Partial<LocalSpace> = {
+      // Dołączenie z sesją przypina członka do konta — wylogowanie zabierze tę mapę razem z kontem
+      ...(session ? { kind: 'family' as const } : {}),
       serverId: res.spaceId,
       name: res.name,
       memberToken: res.memberToken,

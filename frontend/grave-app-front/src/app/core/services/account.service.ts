@@ -6,8 +6,8 @@ import { IndexedDbService } from './indexeddb.service';
 import { FamilySyncService } from './family-sync.service';
 import { StoredSession, clearSession, readSession, writeSession } from './session';
 import { readStorage, writeStorage } from './storage';
-import { LOCAL_SPACE_ID, credentialOf, newSharedSpace } from '../../shared/models/space.model';
-import { LinkedSpace, planAccountLink } from '../../shared/utils/account-link';
+import { LOCAL_SPACE_ID, newSharedSpace } from '../../shared/models/space.model';
+import { LinkedSpace, planAccountLink, spacesToForgetOnLogout } from '../../shared/utils/account-link';
 
 const LAST_LINK_KEY = 'znajdzgroby-last-link';
 const LINK_EVERY_MS = 24 * 60 * 60 * 1000;
@@ -94,21 +94,19 @@ export class AccountService {
     this.link().catch(() => {});
   }
 
-  /** Wylogowanie: dane konta znikają z tej przeglądarki (są na serwerze), „Moje” lokalne zostaje puste. */
+  /** Wylogowanie: mapy konta znikają z tej przeglądarki (są na serwerze); mapy spoza konta zostają. */
   async logout(): Promise<void> {
     const session = this.session();
     if (session) await this.api.authLogout(session.token).catch(() => {});
-    for (const space of this.spaces.spaces()) {
-      if (space.id !== LOCAL_SPACE_ID) await this.spaces.forget(space.id, false);
-    }
+    for (const id of spacesToForgetOnLogout(this.spaces.spaces())) await this.spaces.forget(id, false);
     this.dropSession();
   }
 
-  /** Liczba niewysłanych zmian we wszystkich mapach — do ostrzeżenia przed wylogowaniem. */
+  /** Liczba niewysłanych zmian w mapach, które wylogowanie usunie z przeglądarki. */
   async pendingChanges(): Promise<number> {
     let total = 0;
-    for (const space of this.spaces.spaces()) {
-      if (credentialOf(space)) total += await this.db.queueCount(space.id);
+    for (const id of spacesToForgetOnLogout(this.spaces.spaces())) {
+      total += await this.db.queueCount(id);
     }
     return total;
   }

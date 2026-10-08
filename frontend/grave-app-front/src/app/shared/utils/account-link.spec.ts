@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LinkedSpace, planAccountLink, visibleSpaces } from './account-link';
+import { LinkedSpace, planAccountLink, spacesToForgetOnLogout, visibleSpaces } from './account-link';
 import { LocalSpace, localSpace, newSharedSpace } from '../models/space.model';
 
 const linked = (over: Partial<LinkedSpace>): LinkedSpace => ({
@@ -66,5 +66,15 @@ describe('visibleSpaces', () => {
     const fam = newSharedSpace({ id: 'F', name: 'Rodzina', kind: 'family' });
     const personal = newSharedSpace({ id: 'P', name: 'Moje', kind: 'personal' });
     expect(visibleSpaces([localSpace(), fam, personal]).map((s) => s.id)).toEqual(['P', 'F']);
+  });
+});
+
+describe('spacesToForgetOnLogout', () => {
+  it('usuwa tylko mapy konta; mapy spoza konta, usunięte z rodziny i lokalna „Moje” zostają', () => {
+    const personal = newSharedSpace({ id: 'P', name: 'Moje', kind: 'personal' });
+    const fam = newSharedSpace({ id: 'F', name: 'Rodzina', kind: 'family' });
+    const notOnAccount = newSharedSpace({ id: 'N', name: 'Teściowie' });
+    const removed = newSharedSpace({ id: 'R', name: 'Dawna', kind: 'family', status: 'removed' });
+    expect(spacesToForgetOnLogout([localSpace(), personal, fam, notOnAccount, removed])).toEqual(['P', 'F']);
   });
 });

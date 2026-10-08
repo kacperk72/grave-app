@@ -43,3 +43,14 @@ export function visibleSpaces<T extends Pick<LocalSpace, 'id' | 'kind'>>(all: T[
     ...all.filter((s) => s.kind !== 'personal' && s.id !== LOCAL_SPACE_ID),
   ];
 }
+
+/**
+ * Co wylogowanie zabiera z przeglądarki: tylko mapy konta (`kind` nadaje przypięcie do konta),
+ * bo wrócą po zalogowaniu. Mapy spoza konta i kopie map, z których usunięto to urządzenie, zostają —
+ * to jedyne kopie tych grobów.
+ */
+export function spacesToForgetOnLogout(spaces: Pick<LocalSpace, 'id' | 'kind' | 'status'>[]): string[] {
+  return spaces
+    .filter((s) => s.id !== LOCAL_SPACE_ID && s.kind && s.status !== 'removed')
+    .map((s) => s.id);
+}
