@@ -275,6 +275,7 @@ async function register(email, password) {
 
 /** Zakładanie konta, logowanie, blokada, nowe hasło, wylogowanie. */
 async function accounts() {
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
   const email = `ala-${Date.now()}@example.com`;
   const bad = await call('POST', '/auth/request', { body: { email: 'zly-adres' } });
   check('zły e-mail: 400', bad.status === 400, bad);
@@ -410,6 +411,49 @@ async function accountLink() {
   check('link bez ważnej sesji: 401', unlinked.status === 401, unlinked);
 }
 
+/** Poprawki po przeglądzie: klucze mapy prywatnej, wyścigi blokad, limity maili. */
+async function hardening() {
+  const email = `h-${Date.now()}@example.com`;
+  const u = await register(email, 'dobrehaslo1');
+
+  // Codzienne link() z kluczem mapy prywatnej nie dopisuje nowych kluczy
+  const l1 = await call('POST', '/account/link', { token: u, body: { tokens: [] } });
+  const personal = l1.data?.spaces?.find((x) => x.kind === 'personal');
+  const before = sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${personal?.memberId}'`);
+  const l2 = await call('POST', '/account/link', { token: u, body: { tokens: [personal?.memberToken] } });
+  await call('POST', '/account/link', { token: u, body: { tokens: [personal?.memberToken] } });
+  check('link() z kluczem mapy prywatnej nie mnoży kluczy', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${personal?.memberId}'`) === before && l2.data?.spaces?.find((x) => x.kind === 'personal')?.memberToken === personal?.memberToken, l2);
+
+  // Równoległe złe hasła też blokują konto
+  await Promise.all(Array.from({ length: 8 }, () => call('POST', '/auth/login', { body: { email, password: 'zlehaslo00' } })));
+  const locked = await call('POST', '/auth/login', { body: { email, password: 'dobrehaslo1' } });
+  check('równoległe złe hasła: blokada 429', locked.status === 429, locked);
+
+  // Równoległe złe kody wyczerpują 5 prób
+  const req = await call('POST', '/auth/request', { body: { email } });
+  const code = req.data?.dev?.code ?? '';
+  const wrong = code === '000000' ? '111111' : '000000';
+  await Promise.all(Array.from({ length: 10 }, () => call('POST', '/auth/verify', { body: { email, code: wrong } })));
+  const after = await call('POST', '/auth/verify', { body: { email, code } });
+  check('równoległe złe kody: dobry kod już nie działa', after.status === 401, after);
+
+  // Dzienny limit maili (darmowy Resend: 100/dobę) — prośba ponad limit nie wysyła maila
+  const day = new Date().toISOString().slice(0, 10);
+  sqlRun(`INSERT INTO usage_daily (day, mails) VALUES ('${day}', 1000) ON CONFLICT(day) DO UPDATE SET mails = 1000`);
+  const capped = await call('POST', '/auth/request', { body: { email: `cap-${Date.now()}@example.com` } });
+  check('dzienny limit maili: 503 bez kodu', capped.status === 503 && !capped.data?.dev, capped);
+  sqlRun(`UPDATE usage_daily SET mails = 0 WHERE day = '${day}'`);
+
+  // Limit próśb z jednego adresu IP (różne e-maile)
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+  const statuses = [];
+  for (let i = 0; i < 11; i++) {
+    statuses.push((await call('POST', '/auth/request', { body: { email: `ip${i}-${Date.now()}@example.com` } })).status);
+  }
+  check('limit próśb z jednego IP: 11. prośba → 429', statuses.slice(0, 10).every((x) => x === 202) && statuses[10] === 429, statuses);
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
@@ -419,6 +463,7 @@ await legacyDelete();
 await memberTokens();
 await accounts();
 await accountLink();
+await hardening();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');

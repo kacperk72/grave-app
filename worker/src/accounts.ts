@@ -1,6 +1,6 @@
 import type { Env } from './index';
 import { HttpError, json, readJson } from './http';
-import { newToken, sha256 } from './util';
+import { currentDay, newToken, sha256 } from './util';
 import { sendLoginMail } from './mail';
 import { insertMember } from './members';
 import {
@@ -18,6 +18,10 @@ const CODE_TTL_MS = 15 * MINUTE;
 const SETUP_TTL_MS = 15 * MINUTE;
 const MAX_CODE_REQUESTS_PER_HOUR = 5;
 const MAX_CODE_ATTEMPTS = 5;
+// Prośby o kod z jednego adresu IP (różne e-maile) i maile na dobę dla całej aplikacji —
+// darmowy Resend wysyła 100 maili na dobę, zostawiamy zapas.
+const MAX_CODE_REQUESTS_PER_IP_HOUR = 10;
+const MAX_MAILS_PER_DAY = 90;
 const MAX_LOGIN_FAILURES = 5;
 const LOCK_MS = 15 * MINUTE;
 const SESSION_TTL_MS = 365 * 24 * 60 * MINUTE;
@@ -97,15 +101,45 @@ export async function requestCode(request: Request, env: Env): Promise<Response>
   // Ta sama odpowiedź przy limicie — nie zdradzamy niczego o adresie
   if ((recent?.n ?? 0) >= MAX_CODE_REQUESTS_PER_HOUR) return json({ ok: true }, 202);
 
+  const ip = request.headers.get('CF-Connecting-IP');
+  const ipHash = ip ? await sha256(ip) : null;
+  if (ipHash) {
+    const fromIp = await env.DB.prepare('SELECT COUNT(*) AS n FROM login_codes WHERE ip_hash = ? AND created_at > ?')
+      .bind(ipHash, now - 60 * MINUTE)
+      .first<{ n: number }>();
+    if ((fromIp?.n ?? 0) >= MAX_CODE_REQUESTS_PER_IP_HOUR) {
+      throw new HttpError(429, 'Za dużo próśb o kod. Spróbuj ponownie za godzinę.');
+    }
+  }
+  // Licznik dnia podbijany atomowo — równoległe prośby nie przeskoczą limitu
+  const slot = await env.DB.prepare(
+    `INSERT INTO usage_daily (day, mails) VALUES (?1, 1)
+     ON CONFLICT(day) DO UPDATE SET mails = mails + 1 WHERE mails < ?2
+     RETURNING mails`
+  )
+    .bind(currentDay(), MAX_MAILS_PER_DAY)
+    .first<{ mails: number }>();
+  if (!slot) {
+    throw new HttpError(503, 'Dziś wysłaliśmy już wszystkie maile z kodem. Spróbuj jutro albo zaloguj się hasłem.');
+  }
+
+  const id = crypto.randomUUID();
   const code = sixDigits();
   const link = newToken();
   await env.DB.prepare(
-    `INSERT INTO login_codes (id, email, code_hash, link_hash, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO login_codes (id, email, code_hash, link_hash, created_at, expires_at, ip_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(crypto.randomUUID(), email, await sha256(code), await sha256(link), now, now + CODE_TTL_MS)
+    .bind(id, email, await sha256(code), await sha256(link), now, now + CODE_TTL_MS, ipHash)
     .run();
-  const dev = await sendLoginMail(env, { email, code, link: `${env.APP_URL}/logowanie#${link}` });
+  let dev;
+  try {
+    dev = await sendLoginMail(env, { email, code, link: `${env.APP_URL}/logowanie#${link}` });
+  } catch (err) {
+    // Mail nie wyszedł: kod nie liczy się do limitu adresu
+    await env.DB.prepare('DELETE FROM login_codes WHERE id = ?').bind(id).run();
+    throw err;
+  }
   return json({ ok: true, ...(dev ? { dev } : {}) }, 202);
 }
 
@@ -140,17 +174,26 @@ export async function verifyCode(request: Request, env: Env): Promise<Response> 
     )
       .bind(email)
       .first<CodeRow>();
-    if (usable(row) && (await sha256(body.code.trim())) !== row.code_hash) {
-      await env.DB.prepare('UPDATE login_codes SET attempts = attempts + 1 WHERE id = ?').bind(row.id).run();
-      throw new HttpError(401, BAD_CODE);
-    }
+    if (!usable(row)) throw new HttpError(401, BAD_CODE);
+    // Próba rezerwowana atomowo PRZED porównaniem — równoległe zgadywanie nie obejdzie limitu 5 prób
+    const reserved = await env.DB.prepare(
+      `UPDATE login_codes SET attempts = attempts + 1
+        WHERE id = ? AND attempts < ? AND used_at IS NULL AND expires_at > ? RETURNING id`
+    )
+      .bind(row.id, MAX_CODE_ATTEMPTS, now)
+      .first<{ id: string }>();
+    if (!reserved || (await sha256(body.code.trim())) !== row.code_hash) throw new HttpError(401, BAD_CODE);
   }
   if (!usable(row)) throw new HttpError(401, BAD_CODE);
 
   const setupToken = newToken();
-  await env.DB.prepare('UPDATE login_codes SET used_at = ?, setup_hash = ?, setup_expires_at = ? WHERE id = ?')
+  // `used_at IS NULL` w warunku: ten sam kod (albo link) użyty dwa razy naraz daje tylko jeden setupToken
+  const used = await env.DB.prepare(
+    'UPDATE login_codes SET used_at = ?, setup_hash = ?, setup_expires_at = ? WHERE id = ? AND used_at IS NULL'
+  )
     .bind(now, await sha256(setupToken), now + SETUP_TTL_MS, row.id)
     .run();
+  if (!used.meta.changes) throw new HttpError(401, BAD_CODE);
   return json({ setupToken, email: row.email });
 }
 
@@ -219,18 +262,22 @@ export async function login(request: Request, env: Env): Promise<Response> {
     await hashPassword(password, DUMMY_SALT, PASSWORD_ITERATIONS);
     throw new HttpError(401, BAD_LOGIN);
   }
-  if (user.locked_until && user.locked_until > now) {
+  // Każda próba liczona atomowo PRZED sprawdzeniem hasła, więc równoległe zgadywanie też blokuje.
+  // 5. próba zakłada blokadę na 15 minut; po jej wygaśnięciu licznik zaczyna od nowa.
+  const attempt = await env.DB.prepare(
+    `UPDATE users
+        SET failed_logins = (CASE WHEN locked_until IS NOT NULL THEN 0 ELSE failed_logins END) + 1,
+            locked_until = CASE WHEN (CASE WHEN locked_until IS NOT NULL THEN 0 ELSE failed_logins END) + 1 >= ?1
+                                THEN ?2 ELSE NULL END
+      WHERE id = ?3 AND (locked_until IS NULL OR locked_until <= ?4)
+      RETURNING failed_logins`
+  )
+    .bind(MAX_LOGIN_FAILURES, now + LOCK_MS, user.id, now)
+    .first<{ failed_logins: number }>();
+  if (!attempt) {
     throw new HttpError(429, 'Za dużo prób. Spróbuj za kilkanaście minut albo ustaw nowe hasło.');
   }
-  if (!(await verifyPassword(password, user))) {
-    // Po 5. błędzie blokada na 15 minut i licznik od zera — kolejne 5 prób po blokadzie znów blokuje
-    const failures = user.failed_logins + 1;
-    const lock = failures >= MAX_LOGIN_FAILURES;
-    await env.DB.prepare('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?')
-      .bind(lock ? 0 : failures, lock ? now + LOCK_MS : null, user.id)
-      .run();
-    throw new HttpError(401, BAD_LOGIN);
-  }
+  if (!(await verifyPassword(password, user))) throw new HttpError(401, BAD_LOGIN);
 
   if (needsRehash(user.password_algo, user.password_iterations)) {
     const salt = randomBase64(16);
@@ -242,11 +289,10 @@ export async function login(request: Request, env: Env): Promise<Response> {
       .bind(hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, user.id)
       .run();
   }
-  if (user.failed_logins > 0 || user.locked_until) {
-    await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?')
-      .bind(user.id)
-      .run();
-  }
+  // Dobre hasło zeruje licznik (także próbę policzoną wyżej)
+  await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?')
+    .bind(user.id)
+    .run();
   const session = await createSession(env, user.id);
   return json({ session, user: { id: user.id, email: user.email } });
 }
@@ -348,8 +394,8 @@ export async function linkAccount(request: Request, env: Env): Promise<Response>
   for (const token of tokens) {
     const m = await env.DB.prepare(
       `SELECT m.id, m.space_id, m.user_id, m.role, m.joined_at
-         FROM member_tokens t JOIN members m ON m.id = t.member_id JOIN spaces s ON s.id = m.space_id
-        WHERE t.token_hash = ? AND m.removed_at IS NULL AND s.kind = 'family'`
+         FROM member_tokens t JOIN members m ON m.id = t.member_id
+        WHERE t.token_hash = ? AND m.removed_at IS NULL`
     )
       .bind(await sha256(token))
       .first<MemberRow>();
