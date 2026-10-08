@@ -56,13 +56,53 @@ zrozumiały komunikat, zanim KV zacznie odrzucać zapisy.
 Lokalnie `npm run dev` ma `--test-scheduled`:
 `curl "http://localhost:8791/__scheduled?cron=17+3+*+*+*"`.
 
+## Konta (opcjonalne)
+
+Konto przypina mapy do osoby zamiast do przeglądarki: po zalogowaniu na innym urządzeniu
+widać te same mapy rodzinne i prywatną „Moje” (mapa `kind = 'personal'`, bez zaproszeń).
+
+- **Założenie konta / nowe hasło:** `POST /auth/request {email}` → mail z 6-cyfrowym kodem
+  i linkiem `<APP_URL>/logowanie#<link>` → `POST /auth/verify {email, code}` albo `{link}` →
+  `setupToken` (15 min, jednorazowy) → `POST /auth/password {setupToken, password}` → sesja.
+  Nowe hasło wylogowuje pozostałe urządzenia.
+- **Logowanie:** `POST /auth/login {email, password}` → sesja. Zawsze ten sam komunikat 401;
+  po 5 błędnych hasłach blokada na 15 minut (429).
+- **Sesja:** token `Bearer` (365 dni, przedłużany raz na dobę); `POST /auth/logout`.
+- **`GET /account`:** użytkownik i jego mapy. **`POST /account/link {tokens}`:** przypina klucze
+  członka z tego urządzenia do konta (duplikaty tej samej osoby w jednej mapie są scalane —
+  zostaje wcześniejszy członek, z rolą założyciela, jeśli któryś ją miał), zakłada „Moje”
+  i zwraca wszystkie mapy konta z kluczem dla tego urządzenia.
+- **`POST /join` z nagłówkiem `X-Session`:** członek przypięty do konta; jeśli konto już jest
+  w mapie — nowy klucz urządzenia dla istniejącego członka zamiast duplikatu.
+
+Członek mapy może mieć wiele kluczy urządzeń (`member_tokens`); `members.token_hash` jest
+nadal wypełniane, żeby dało się wrócić do starszej wersji Workera.
+
+**Limity:** kod ważny 15 minut, 5 prób na kod, 5 próśb o kod na godzinę na adres
+(`/auth/request` zawsze odpowiada 202 tą samą treścią).
+
+**Hasła:** PBKDF2-SHA256, sól 16 B, `PASSWORD_ITERATIONS = 20 000` w `src/password.ts` —
+tyle mieści się w 10 ms CPU darmowego planu. Algorytm i liczba iteracji są zapisane przy
+haśle: po podniesieniu stałej (np. na płatnym planie) hasła przeliczają się same przy
+następnym logowaniu.
+
+**Maile:** Resend. Zmienne: `MAIL_MODE` (`resend` na produkcji; `log` tylko lokalnie —
+kod trafia do logu i do odpowiedzi `dev`, działa wyłącznie przy `ALLOWED_ORIGINS` z samym
+`http://localhost:*`), `APP_URL` (adres w linkach), sekret `RESEND_API_KEY`:
+
+```bash
+npx wrangler secret put RESEND_API_KEY
+```
+
+Bez klucza `/auth/request` zwraca 503, reszta API działa.
+
 ## Lokalnie
 
 ```bash
 npm install
 npm run db:migrate:local
 npm run dev            # http://localhost:8791, CORS dla localhost:4260 i 4200
-npm run smoke          # test dymny API — TYLKO lokalnie, nigdy na produkcji
+npm run smoke          # test dymny API (z kontami: MAIL_MODE=log) — TYLKO lokalnie
 ```
 
 Frontend w trybie deweloperskim łączy się z `http://localhost:8791`

@@ -6,6 +6,7 @@ import { BackupService, ImportMode } from '../../core/services/backup.service';
 import { GraveService } from '../graves/services/grave.service';
 import { FamilySyncService } from '../../core/services/family-sync.service';
 import { SpaceService } from '../../core/services/space.service';
+import { AccountService } from '../../core/services/account.service';
 import { AvatarStackComponent } from '../../shared/components/avatar.component';
 import { LOCAL_SPACE_ID } from '../../shared/models/space.model';
 import { syncStatusText } from '../../shared/utils/sync-status';
@@ -32,10 +33,15 @@ export class SettingsPageComponent {
   readonly family = inject(FamilySyncService);
 
   readonly spaces = inject(SpaceService);
+  readonly account = inject(AccountService);
 
   /** Rodzinne mapy w tym telefonie — wiersze listy z nazwą, stanem i awatarami. */
   readonly mapRows = computed(() =>
-    this.spaces.sharedSpaces().map((s) => {
+    // Prywatna mapa konta to „Moje”, nie mapa rodzinna
+    this.spaces
+      .sharedSpaces()
+      .filter((s) => s.kind !== 'personal')
+      .map((s) => {
       const sync = this.family.syncOf(s.id);
       return {
         id: s.id,
@@ -48,6 +54,19 @@ export class SettingsPageComponent {
       };
     })
   );
+
+  async logout(): Promise<void> {
+    const pending = await this.account.pendingChanges();
+    const unsent = pluralPl(
+      pending,
+      'zmiana nie została jeszcze wysłana i przepadnie',
+      'zmiany nie zostały jeszcze wysłane i przepadną',
+      'zmian nie zostało jeszcze wysłanych i przepadnie'
+    );
+    const warning = pending > 0 ? ` ${pending} ${unsent}.` : '';
+    if (!confirm(`Wylogować? Groby konta znikną z tej przeglądarki (zostają na koncie).${warning}`)) return;
+    await this.account.logout();
+  }
 
   readonly themeOptions: { value: ThemePreference; label: string }[] = [
     { value: 'light', label: 'Jasny' },

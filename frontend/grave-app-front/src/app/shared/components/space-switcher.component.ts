@@ -15,6 +15,7 @@ import { IndexedDbService } from '../../core/services/indexeddb.service';
 import { AvatarStackComponent } from './avatar.component';
 import { IconComponent } from './icon.component';
 import { isShared } from '../models/space.model';
+import { visibleSpaces } from '../utils/account-link';
 import { pluralPl } from '../utils/grave-display';
 import { syncStatusText } from '../utils/sync-status';
 
@@ -208,12 +209,15 @@ export class SpaceSwitcherComponent {
   readonly activePeople = computed(() => this.spaces.members()[this.spaces.activeSpaceId()] ?? []);
 
   readonly rows = computed(() =>
-    this.spaces.spaces().map((s) => {
+    visibleSpaces(this.spaces.spaces()).map((s) => {
       const n = this.counts()[s.id] ?? 0;
       const graves = `${n} ${pluralPl(n, 'grób', 'groby', 'grobów')}`;
-      const sub = isShared(s)
-        ? `${graves} · ${syncStatusText(this.sync.syncOf(s.id), s.syncedAt)}`
-        : `${graves} · tylko w tym telefonie`;
+      const sub =
+        s.kind === 'personal'
+          ? `${graves} · na koncie`
+          : isShared(s)
+            ? `${graves} · ${syncStatusText(this.sync.syncOf(s.id), s.syncedAt)}`
+            : `${graves} · tylko w tym telefonie`;
       return {
         id: s.id,
         name: s.name,

@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 
 import { SpaceService } from '../../core/services/space.service';
+import { AccountService } from '../../core/services/account.service';
 import { FamilySyncService } from '../../core/services/family-sync.service';
 import { ApiError, InvitePreview } from '../../core/services/family-api';
 import { markOnboardingSeen } from '../../core/services/onboarding';
@@ -42,6 +43,12 @@ type View =
         <app-icon name="users" [size]="20" />
         <span>Twoje groby z innych map nie zostaną wysłane na tę mapę.</span>
       </div>
+      @if (!account.loggedIn()) {
+      <p class="hint">
+        Masz konto? <a routerLink="/logowanie">Zaloguj się</a> przed dołączeniem — mapa będzie wtedy na
+        każdym Twoim urządzeniu.
+      </p>
+      }
       <app-profile-form
         submitLabel="Dołącz"
         busyLabel="Dołączam…"
@@ -129,6 +136,12 @@ type View =
         color: var(--ink-muted);
       }
 
+      .hint {
+        margin: 0;
+        font-size: 13px;
+        color: var(--ink-muted);
+      }
+
       .note {
         display: flex;
         align-items: flex-start;
@@ -169,6 +182,7 @@ type View =
 })
 export class JoinFamilyPageComponent {
   private readonly spaces = inject(SpaceService);
+  readonly account = inject(AccountService);
   private readonly sync = inject(FamilySyncService);
   private readonly router = inject(Router);
 

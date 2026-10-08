@@ -40,6 +40,7 @@ import {
   updateMe,
 } from './members';
 import { purgePhotos } from './purge';
+import { getAccount, linkAccount, login, logout, requestCode, setPassword, verifyCode } from './accounts';
 
 export interface Env {
   DB: D1Database;
@@ -48,6 +49,12 @@ export interface Env {
   ALLOWED_ORIGINS: string;
   /** "false" wyłącza dostęp przejściowy kluczem zaproszenia. */
   ALLOW_INVITE_AS_MEMBER?: string;
+  /** Adres aplikacji w linkach z maili. */
+  APP_URL: string;
+  /** "resend" albo "log" (tylko lokalnie). */
+  MAIL_MODE?: string;
+  /** Sekret: klucz API Resend. */
+  RESEND_API_KEY?: string;
 }
 
 interface IncomingChange {
@@ -116,6 +123,15 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === 'POST' && path === '/join') {
     return joinSpace(request, env, await spaceFromInvite(request, env));
   }
+
+  // Konta (sesja w Authorization tylko tam, gdzie potrzebna)
+  if (request.method === 'POST' && path === '/auth/request') return requestCode(request, env);
+  if (request.method === 'POST' && path === '/auth/verify') return verifyCode(request, env);
+  if (request.method === 'POST' && path === '/auth/password') return setPassword(request, env);
+  if (request.method === 'POST' && path === '/auth/login') return login(request, env);
+  if (request.method === 'POST' && path === '/auth/logout') return logout(request, env);
+  if (request.method === 'GET' && path === '/account') return getAccount(request, env);
+  if (request.method === 'POST' && path === '/account/link') return linkAccount(request, env);
 
   const session = await authenticate(request, env);
   const space = session.space;

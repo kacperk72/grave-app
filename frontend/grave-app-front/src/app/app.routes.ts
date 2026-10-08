@@ -75,6 +75,11 @@ export const routes: Routes = [
       import('./features/family/space-page.component').then((m) => m.SpacePageComponent),
   },
   {
+    path: 'logowanie',
+    loadComponent: () =>
+      import('./features/account/login-page.component').then((m) => m.LoginPageComponent),
+  },
+  {
     path: '**',
     redirectTo: 'start',
   },

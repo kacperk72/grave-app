@@ -1,6 +1,7 @@
 import type { Env } from './index';
 import { Session, Space, requireMember, requireOwner } from './auth';
 import { HttpError, json, readJson, readOptionalJson } from './http';
+import { userFromSession } from './accounts';
 import { newToken, sha256 } from './util';
 
 /** Paleta awatarów — ta sama lista co w aplikacji (`shared/utils/member-display.ts`). */
@@ -36,14 +37,23 @@ interface NewMember {
   name: string;
   color: string;
   role: 'owner' | 'member';
+  userId?: string | null;
 }
 
-function insertMember(env: Env, m: NewMember): D1PreparedStatement {
+/** Członek i jego pierwszy klucz urządzenia. `members.token_hash` zostaje wypełnione (powrót do starszej wersji). */
+export function insertMember(env: Env, m: NewMember): D1PreparedStatement[] {
   const now = Date.now();
-  return env.DB.prepare(
-    `INSERT INTO members (id, space_id, token_hash, name, color, role, joined_at, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(m.id, m.spaceId, m.tokenHash, m.name, m.color, m.role, now, now);
+  return [
+    env.DB.prepare(
+      `INSERT INTO members (id, space_id, token_hash, name, color, role, joined_at, last_seen_at, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(m.id, m.spaceId, m.tokenHash, m.name, m.color, m.role, now, now, m.userId ?? null),
+    env.DB.prepare('INSERT INTO member_tokens (token_hash, member_id, created_at) VALUES (?, ?, ?)').bind(
+      m.tokenHash,
+      m.id,
+      now
+    ),
+  ];
 }
 
 export async function createSpace(request: Request, env: Env): Promise<Response> {
@@ -73,7 +83,7 @@ export async function createSpace(request: Request, env: Env): Promise<Response>
   const memberId = crypto.randomUUID();
   await env.DB.batch([
     insertSpace(name),
-    insertMember(env, {
+    ...insertMember(env, {
       id: memberId,
       spaceId,
       tokenHash: await sha256(memberToken),
@@ -106,6 +116,26 @@ export async function joinSpace(request: Request, env: Env, space: Space): Promi
   const name = parseName(body?.name, 'Imię');
   const color = parseColor(body?.color);
 
+  // Zalogowany: członek przypięty do konta; jeśli konto już jest w tej mapie — nowy klucz dla istniejącego
+  const user = await userFromSession(env, request.headers.get('X-Session') ?? '');
+  if (user) {
+    const existing = await env.DB.prepare(
+      'SELECT id, role FROM members WHERE space_id = ? AND user_id = ? AND removed_at IS NULL'
+    )
+      .bind(space.id, user.id)
+      .first<{ id: string; role: 'owner' | 'member' }>();
+    if (existing) {
+      const memberToken = newToken();
+      await env.DB.prepare('INSERT INTO member_tokens (token_hash, member_id, created_at) VALUES (?, ?, ?)')
+        .bind(await sha256(memberToken), existing.id, Date.now())
+        .run();
+      return json(
+        { spaceId: space.id, name: space.name, memberToken, memberId: existing.id, role: existing.role },
+        201
+      );
+    }
+  }
+
   const counts = await env.DB.prepare(
     `SELECT COUNT(*) AS active, COALESCE(SUM(role = 'owner'), 0) AS owners
        FROM members WHERE space_id = ? AND removed_at IS NULL`
@@ -125,14 +155,15 @@ export async function joinSpace(request: Request, env: Env, space: Space): Promi
     color,
     // Mapa sprzed list członków nie ma założyciela — zostaje nim pierwszy podpisany
     role: (counts?.owners ?? 0) > 0 ? 'member' : 'owner',
+    userId: user?.id ?? null,
   };
   try {
-    await insertMember(env, member).run();
+    await env.DB.batch(insertMember(env, member));
   } catch (err) {
     // Dwa pierwsze dołączenia naraz: indeks members_one_owner wpuści tylko jednego założyciela
     if (member.role !== 'owner' || !String(err).includes('UNIQUE')) throw err;
     member.role = 'member';
-    await insertMember(env, member).run();
+    await env.DB.batch(insertMember(env, member));
   }
   return json(
     { spaceId: space.id, name: space.name, memberToken, memberId: member.id, role: member.role },
@@ -176,6 +207,7 @@ export async function updateMe(request: Request, env: Env, session: Session): Pr
 }
 
 export async function leaveSpace(env: Env, session: Session): Promise<Response> {
+  rejectPersonal(session);
   const me = requireMember(session);
   if (me.role === 'owner') {
     throw new HttpError(409, 'Założyciel musi najpierw przekazać rolę innej osobie');
@@ -194,6 +226,7 @@ export async function renameSpace(request: Request, env: Env, session: Session):
 
 /** Nowy link zaproszenia. Dołączeni członkowie działają dalej — mają własne klucze. */
 export async function rotateInvite(env: Env, session: Session): Promise<Response> {
+  rejectPersonal(session);
   if (session.member) {
     requireOwner(session);
   } else if (await hasOwner(env, session.space.id)) {
@@ -209,6 +242,7 @@ export async function rotateInvite(env: Env, session: Session): Promise<Response
 }
 
 export async function removeMember(env: Env, session: Session, memberId: string): Promise<Response> {
+  rejectPersonal(session);
   const me = requireOwner(session);
   if (memberId === me.id) {
     throw new HttpError(400, 'Nie możesz usunąć siebie — przekaż rolę albo usuń mapę');
@@ -223,6 +257,7 @@ export async function removeMember(env: Env, session: Session, memberId: string)
 }
 
 export async function transferOwner(env: Env, session: Session, memberId: string): Promise<Response> {
+  rejectPersonal(session);
   const me = requireOwner(session);
   if (memberId === me.id) throw new HttpError(400, 'Już jesteś założycielem tej mapy');
   const target = await env.DB.prepare(
@@ -241,6 +276,7 @@ export async function transferOwner(env: Env, session: Session, memberId: string
 
 /** Usuwa mapę. Bajty zdjęć trafiają do kolejki sprzątania (Cron, src/purge.ts). */
 export async function deleteSpace(env: Env, session: Session): Promise<Response> {
+  rejectPersonal(session);
   requireOwner(session);
   const row = await env.DB.prepare(
     'SELECT COUNT(*) AS active FROM members WHERE space_id = ? AND removed_at IS NULL'
@@ -283,4 +319,9 @@ async function hasOwner(env: Env, spaceId: string): Promise<boolean> {
     .bind(spaceId)
     .first();
   return row !== null;
+}
+
+/** Mapa prywatna konta: bez zaproszeń, wychodzenia, usuwania osób i całej mapy. */
+function rejectPersonal(session: Session): void {
+  if (session.space.kind === 'personal') throw new HttpError(403, 'To prywatna mapa');
 }

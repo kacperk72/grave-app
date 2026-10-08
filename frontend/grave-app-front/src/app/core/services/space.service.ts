@@ -3,6 +3,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { ACTIVE_SPACE_KEY, IndexedDbService } from './indexeddb.service';
 import { FamilyApi, InvitePreview } from './family-api';
 import { writeProfile } from './profile';
+import { readSession } from './session';
 import { readStorage, removeStorage, writeStorage } from './storage';
 import {
   LOCAL_SPACE_ID,
@@ -186,8 +187,11 @@ export class SpaceService {
       this.setActive(known.id);
       return known;
     }
-    const res = await this.api.join(invite, profile);
+    const session = readSession()?.token;
+    const res = await this.api.join(invite, profile, session);
     const fields: Partial<LocalSpace> = {
+      // Dołączenie z sesją przypina członka do konta — wylogowanie zabierze tę mapę razem z kontem
+      ...(session ? { kind: 'family' as const } : {}),
       serverId: res.spaceId,
       name: res.name,
       memberToken: res.memberToken,

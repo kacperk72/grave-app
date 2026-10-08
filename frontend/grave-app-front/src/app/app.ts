@@ -6,6 +6,7 @@ import { ProfilePromptComponent } from './features/family/profile-prompt.compone
 import { ThemeService } from './core/services/theme.service';
 import { AppUpdateService } from './core/services/app-update.service';
 import { FamilySyncService } from './core/services/family-sync.service';
+import { AccountService } from './core/services/account.service';
 import { injectCurrentUrl } from './core/services/current-url';
 
 @Component({
@@ -22,7 +23,13 @@ export class App {
   protected readonly update = inject(AppUpdateService);
   // Start synchronizacji rodzinnej mapy (jeśli telefon do niej dołączył)
   private readonly familySync = inject(FamilySyncService);
+  // Konto: raz na dobę dociąga mapy dodane na innych urządzeniach
+  private readonly account = inject(AccountService);
   private readonly currentUrl = injectCurrentUrl();
+
+  constructor() {
+    this.account.linkIfDue();
+  }
 
   private readonly path = computed(() => this.currentUrl().split(/[?#]/)[0]);
 
@@ -34,7 +41,8 @@ export class App {
       p.startsWith('/welcome') ||
       p.startsWith('/graves/') ||
       p.startsWith('/rodzina') ||
-      p.startsWith('/mapy/')
+      p.startsWith('/mapy/') ||
+      p.startsWith('/logowanie')
     );
   });
 

@@ -22,6 +22,7 @@ import { PhotoViewerComponent } from '../../../../shared/components/photo-viewer
 import { AvatarComponent } from '../../../../shared/components/avatar.component';
 import { SpaceService } from '../../../../core/services/space.service';
 import { LOCAL_SPACE_ID, isShared } from '../../../../shared/models/space.model';
+import { visibleSpaces } from '../../../../shared/utils/account-link';
 import { relativeTime } from '../../../../shared/utils/member-display';
 import { canGoBackInApp } from '../../../../core/services/navigation';
 import {
@@ -78,9 +79,9 @@ export class GraveDetailsPageComponent {
 
   /** Mapy, na które można przenieść albo skopiować grób. */
   readonly targets = computed(() =>
-    this.spaces
-      .spaces()
-      .filter((s) => s.id !== this.spaces.activeSpaceId() && s.status !== 'removed')
+    visibleSpaces(this.spaces.spaces()).filter(
+      (s) => s.id !== this.spaces.activeSpaceId() && s.status !== 'removed'
+    )
   );
   readonly transferMode = signal<'move' | 'copy' | null>(null);
   readonly transferNote = signal<string | null>(null);

@@ -1,21 +1,32 @@
 // Test dymny API rodzinnej mapy na LOKALNYM Workerze.
 // Uruchom `npm run dev` (port 8791), potem `npm run smoke`. Nigdy na produkcji.
 import { execSync } from 'node:child_process';
+import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const API = process.env.API ?? 'http://localhost:8791';
 const workerDir = fileURLToPath(new URL('..', import.meta.url));
 let failed = 0;
 
-async function call(method, path, { token, body } = {}) {
-  const headers = {};
+async function call(method, path, { token, body, headers: extra } = {}) {
+  const headers = { ...(extra ?? {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(API + path, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  // `wrangler d1 execute` obok `wrangler dev` potrafi na chwilę przeładować Workera — ponów przy błędzie sieci
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(API + path, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      break;
+    } catch (err) {
+      if (attempt >= 4) throw err;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
   const data = await res.json().catch(() => null);
   return { status: res.status, data };
 }
@@ -238,12 +249,221 @@ async function legacyDelete() {
   check('usunięcie mapy używanej przez niepodpisany telefon: 409', del.status === 409, del);
 }
 
+/** Wykonuje zapytanie zmieniające dane w lokalnej D1 (tylko testy lokalne). */
+function sqlRun(query) {
+  execSync(`npx wrangler d1 execute grave-app --local --command "${query}"`, { cwd: workerDir, encoding: 'utf8' });
+}
+
+/** Każdy członek ma klucz urządzenia w member_tokens — także ci sprzed migracji (kopia). */
+async function memberTokens() {
+  const created = await call('POST', '/spaces', { body: { name: 'Klucze', member: { name: 'Ala', color: 'sky' } } });
+  const joined = await call('POST', '/join', { token: created.data.invite, body: { name: 'Ola', color: 'rose' } });
+  check('nowy członek ma klucz w member_tokens', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${joined.data.memberId}'`) === 1);
+  check('założyciel ma klucz w member_tokens', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${created.data.memberId}'`) === 1);
+  const space = await call('GET', '/space', { token: joined.data.memberToken });
+  check('klucz z member_tokens działa', space.status === 200 && space.data.me?.id === joined.data.memberId, space);
+  check('każdy aktywny członek ma co najmniej jeden klucz', sql('SELECT COUNT(*) AS n FROM members m WHERE m.removed_at IS NULL AND NOT EXISTS (SELECT 1 FROM member_tokens t WHERE t.member_id = m.id)') === 0);
+}
+
+/** Zakłada konto: kod z odpowiedzi trybu deweloperskiego → hasło → sesja. */
+async function register(email, password) {
+  const req = await call('POST', '/auth/request', { body: { email } });
+  const ver = await call('POST', '/auth/verify', { body: { email, code: req.data?.dev?.code } });
+  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password } });
+  return set.data?.session;
+}
+
+/** Zakładanie konta, logowanie, blokada, nowe hasło, wylogowanie. */
+async function accounts() {
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+  const email = `ala-${Date.now()}@example.com`;
+  const bad = await call('POST', '/auth/request', { body: { email: 'zly-adres' } });
+  check('zły e-mail: 400', bad.status === 400, bad);
+
+  const r1 = await call('POST', '/auth/request', { body: { email } });
+  check('prośba o kod: 202 + kod w trybie deweloperskim', r1.status === 202 && /^\d{6}$/.test(r1.data?.dev?.code ?? ''), r1);
+  const code = r1.data?.dev?.code ?? '';
+  const wrongCode = code === '000000' ? '111111' : '000000';
+  const wrong = await call('POST', '/auth/verify', { body: { email, code: wrongCode } });
+  check('zły kod: 401', wrong.status === 401, wrong);
+  const ver = await call('POST', '/auth/verify', { body: { email: ` ${email.toUpperCase()} `, code } });
+  check('dobry kod (e-mail z wielkich liter i spacjami): setupToken', ver.status === 200 && typeof ver.data?.setupToken === 'string', ver);
+  const again = await call('POST', '/auth/verify', { body: { email, code } });
+  check('kod jednorazowy: 401', again.status === 401, again);
+
+  const short = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'krotkie' } });
+  check('hasło krótsze niż 8 znaków: 400', short.status === 400, short);
+  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'dobrehaslo1' } });
+  check('ustawienie hasła: sesja', set.status === 200 && typeof set.data?.session === 'string' && set.data.user?.email === email, set);
+  const reuseSetup = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'innehaslo1' } });
+  check('setupToken jednorazowy: 401', reuseSetup.status === 401, reuseSetup);
+
+  const acc = await call('GET', '/account', { token: set.data?.session });
+  check('GET /account z sesją', acc.status === 200 && acc.data?.user?.email === email, acc);
+
+  const badPw = await call('POST', '/auth/login', { body: { email, password: 'zlehaslo00' } });
+  const noUser = await call('POST', '/auth/login', { body: { email: `nikt-${Date.now()}@example.com`, password: 'dobrehaslo1' } });
+  check('złe hasło i brak konta: ten sam 401', badPw.status === 401 && noUser.status === 401 && badPw.data?.error === noUser.data?.error, [badPw, noUser]);
+  const okLogin = await call('POST', '/auth/login', { body: { email: email.toUpperCase(), password: 'dobrehaslo1' } });
+  check('logowanie (wielkie litery w e-mailu)', okLogin.status === 200 && typeof okLogin.data?.session === 'string', okLogin);
+
+  // Przeliczenie hasha po podniesieniu liczby iteracji
+  // Prawdziwy hash z 1000 iteracji (jak zapisany kiedyś słabszymi ustawieniami)
+  const weakSalt = randomBytes(16);
+  const weakHash = pbkdf2Sync('dobrehaslo1', weakSalt, 1000, 32, 'sha256').toString('base64');
+  sqlRun(`UPDATE users SET password_hash = '${weakHash}', password_salt = '${weakSalt.toString('base64')}', password_iterations = 1000 WHERE email = '${email}'`);
+  await call('POST', '/auth/login', { body: { email, password: 'dobrehaslo1' } });
+  check('słabszy hash przeliczony przy logowaniu', sql(`SELECT password_iterations AS n FROM users WHERE email = '${email}'`) === 20000);
+
+  for (let i = 0; i < 5; i++) await call('POST', '/auth/login', { body: { email, password: 'zlehaslo00' } });
+  const locked = await call('POST', '/auth/login', { body: { email, password: 'dobrehaslo1' } });
+  check('blokada po 5 złych hasłach: 429', locked.status === 429, locked);
+
+  // Nowe hasło: zdejmuje blokadę i wylogowuje inne urządzenia
+  const r2 = await call('POST', '/auth/request', { body: { email } });
+  const link = (r2.data?.dev?.link ?? '').split('#')[1];
+  const ver2 = await call('POST', '/auth/verify', { body: { link } });
+  check('potwierdzenie linkiem', ver2.status === 200 && typeof ver2.data?.setupToken === 'string', ver2);
+  const reset = await call('POST', '/auth/password', { body: { setupToken: ver2.data?.setupToken, password: 'nowehaslo22' } });
+  check('nowe hasło: sesja', reset.status === 200, reset);
+  const oldSession = await call('GET', '/account', { token: set.data?.session });
+  check('nowe hasło wylogowuje inne urządzenia', oldSession.status === 401, oldSession);
+  const loginNew = await call('POST', '/auth/login', { body: { email, password: 'nowehaslo22' } });
+  check('logowanie nowym hasłem po blokadzie', loginNew.status === 200, loginNew);
+
+  // 5 złych kodów unieważnia kod
+  const r3 = await call('POST', '/auth/request', { body: { email } });
+  const c3 = r3.data?.dev?.code ?? '';
+  for (let i = 0; i < 5; i++) await call('POST', '/auth/verify', { body: { email, code: c3 === '000000' ? '111111' : '000000' } });
+  const afterAttempts = await call('POST', '/auth/verify', { body: { email, code: c3 } });
+  check('po 5 złych kodach dobry kod nie działa', afterAttempts.status === 401, afterAttempts);
+
+  // Limit 5 próśb o kod na godzinę (r1, r2, r3 + 2 = 5; szósta bez wysyłki)
+  await call('POST', '/auth/request', { body: { email } });
+  await call('POST', '/auth/request', { body: { email } });
+  const limited = await call('POST', '/auth/request', { body: { email } });
+  check('limit próśb: 202 bez kodu', limited.status === 202 && !limited.data?.dev, limited);
+
+  const out = await call('POST', '/auth/logout', { token: loginNew.data?.session });
+  const afterOut = await call('GET', '/account', { token: loginNew.data?.session });
+  check('wylogowanie', out.status === 200 && afterOut.status === 401, afterOut);
+}
+
+/** Przypinanie kluczy urządzeń do konta, mapa prywatna, scalanie duplikatów, blokady mapy prywatnej. */
+async function accountLink() {
+  const u = await register(`u-${Date.now()}@example.com`, 'dobrehaslo1');
+
+  // Mapa rodzinna założona bez konta (A = założyciel) + B dołącza bez konta
+  const fam = await call('POST', '/spaces', { body: { name: 'Rodzina L', member: { name: 'Kacper', color: 'clay' } } });
+  const b = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Bartek', color: 'sky' } });
+
+  const l1 = await call('POST', '/account/link', { token: u, body: { tokens: [fam.data.memberToken] } });
+  const famRow = l1.data?.spaces?.find((x) => x.spaceId === fam.data.spaceId);
+  const personal = l1.data?.spaces?.find((x) => x.kind === 'personal');
+  check('przypięcie: mapa rodzinna i prywatna', l1.status === 200 && famRow?.memberId === fam.data.memberId && famRow?.memberToken === fam.data.memberToken && personal?.name === 'Moje', l1);
+  check('mapa prywatna pierwsza', l1.data?.spaces?.[0]?.kind === 'personal', l1.data?.spaces);
+
+  const before = sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${fam.data.memberId}'`);
+  const tokensNow = (l1.data?.spaces ?? []).map((x) => x.memberToken);
+  const l2 = await call('POST', '/account/link', { token: u, body: { tokens: tokensNow } });
+  check('ponowne link() z tego samego urządzenia nie mnoży kluczy', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${fam.data.memberId}'`) === before && l2.data?.spaces?.length === 2, l2);
+
+  const l3 = await call('POST', '/account/link', { token: u, body: { tokens: [] } });
+  const fam3 = l3.data?.spaces?.find((x) => x.spaceId === fam.data.spaceId);
+  check('nowe urządzenie: ten sam członek, nowy klucz', fam3?.memberId === fam.data.memberId && fam3?.memberToken !== fam.data.memberToken, l3);
+  const viaNew = await call('GET', '/space', { token: fam3?.memberToken });
+  check('nowy klucz urządzenia działa', viaNew.status === 200 && viaNew.data.me?.id === fam.data.memberId, viaNew);
+  check('mapa prywatna tworzona raz', (l3.data?.spaces ?? []).filter((x) => x.kind === 'personal').length === 1 && l3.data.spaces.find((x) => x.kind === 'personal').spaceId === personal?.spaceId);
+
+  // Duplikat: ta sama osoba dołączyła drugi raz bez konta → scalenie przy link()
+  const dup = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Kacper', color: 'sage' } });
+  await call('POST', '/account/link', { token: u, body: { tokens: [dup.data.memberToken] } });
+  const members = await call('GET', '/members', { token: b.data.memberToken });
+  check('scalenie: duplikat znika z listy członków', members.data?.members?.length === 2, members.data);
+  const dupNow = await call('GET', '/space', { token: dup.data.memberToken });
+  check('klucz duplikatu wskazuje teraz scalonego członka', dupNow.data?.me?.id === fam.data.memberId && dupNow.data.me.role === 'owner', dupNow);
+
+  // Scalenie z przejęciem roli założyciela: E (konto, dołączył wcześniej) + O (później, założyciel po przekazaniu)
+  const f3 = await call('POST', '/spaces', { body: { name: 'Rodzina R', member: { name: 'Celina', color: 'moss' } } });
+  const e = await call('POST', '/join', { token: f3.data.invite, headers: { 'X-Session': u }, body: { name: 'Kacper', color: 'clay' } });
+  const o = await call('POST', '/join', { token: f3.data.invite, body: { name: 'Kacper', color: 'sky' } });
+  await call('POST', `/members/${o.data.memberId}/owner`, { token: f3.data.memberToken });
+  await call('POST', '/account/link', { token: u, body: { tokens: [o.data.memberToken] } });
+  const merged = await call('GET', '/space', { token: o.data.memberToken });
+  check('scalenie przenosi rolę założyciela na zachowanego członka', merged.data?.me?.id === e.data.memberId && merged.data.me.role === 'owner', merged);
+
+  // Dołączenie z sesją, gdy konto już jest w mapie → bez duplikatu
+  const again = await call('POST', '/join', { token: f3.data.invite, headers: { 'X-Session': u }, body: { name: 'Kacper', color: 'clay' } });
+  check('dołączenie z sesją: istniejący członek, nowy klucz', again.status === 201 && again.data.memberId === e.data.memberId, again);
+
+  // Cudzy członek nie jest przejmowany
+  const v = await register(`v-${Date.now()}@example.com`, 'dobrehaslo1');
+  const lv = await call('POST', '/account/link', { token: v, body: { tokens: [fam.data.memberToken] } });
+  check('klucz członka innego konta nie jest przejmowany', lv.data?.spaces?.length === 1 && lv.data.spaces[0].kind === 'personal', lv);
+
+  // Mapa prywatna: bez zaproszeń, wyjścia i usuwania
+  const p = (l1.data?.spaces ?? []).find((x) => x.kind === 'personal')?.memberToken;
+  for (const [method, path] of [['POST', '/space/rotate'], ['POST', '/space/leave'], ['DELETE', '/space']]) {
+    const res = await call(method, path, { token: p });
+    check(`mapa prywatna: ${method} ${path} → 403`, res.status === 403, res);
+  }
+  const unlinked = await call('POST', '/account/link', { token: 'zla-sesja', body: { tokens: [] } });
+  check('link bez ważnej sesji: 401', unlinked.status === 401, unlinked);
+}
+
+/** Poprawki po przeglądzie: klucze mapy prywatnej, wyścigi blokad, limity maili. */
+async function hardening() {
+  const email = `h-${Date.now()}@example.com`;
+  const u = await register(email, 'dobrehaslo1');
+
+  // Codzienne link() z kluczem mapy prywatnej nie dopisuje nowych kluczy
+  const l1 = await call('POST', '/account/link', { token: u, body: { tokens: [] } });
+  const personal = l1.data?.spaces?.find((x) => x.kind === 'personal');
+  const before = sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${personal?.memberId}'`);
+  const l2 = await call('POST', '/account/link', { token: u, body: { tokens: [personal?.memberToken] } });
+  await call('POST', '/account/link', { token: u, body: { tokens: [personal?.memberToken] } });
+  check('link() z kluczem mapy prywatnej nie mnoży kluczy', sql(`SELECT COUNT(*) AS n FROM member_tokens WHERE member_id = '${personal?.memberId}'`) === before && l2.data?.spaces?.find((x) => x.kind === 'personal')?.memberToken === personal?.memberToken, l2);
+
+  // Równoległe złe hasła też blokują konto
+  await Promise.all(Array.from({ length: 8 }, () => call('POST', '/auth/login', { body: { email, password: 'zlehaslo00' } })));
+  const locked = await call('POST', '/auth/login', { body: { email, password: 'dobrehaslo1' } });
+  check('równoległe złe hasła: blokada 429', locked.status === 429, locked);
+
+  // Równoległe złe kody wyczerpują 5 prób
+  const req = await call('POST', '/auth/request', { body: { email } });
+  const code = req.data?.dev?.code ?? '';
+  const wrong = code === '000000' ? '111111' : '000000';
+  await Promise.all(Array.from({ length: 10 }, () => call('POST', '/auth/verify', { body: { email, code: wrong } })));
+  const after = await call('POST', '/auth/verify', { body: { email, code } });
+  check('równoległe złe kody: dobry kod już nie działa', after.status === 401, after);
+
+  // Dzienny limit maili (darmowy Resend: 100/dobę) — prośba ponad limit nie wysyła maila
+  const day = new Date().toISOString().slice(0, 10);
+  sqlRun(`INSERT INTO usage_daily (day, mails) VALUES ('${day}', 1000) ON CONFLICT(day) DO UPDATE SET mails = 1000`);
+  const capped = await call('POST', '/auth/request', { body: { email: `cap-${Date.now()}@example.com` } });
+  check('dzienny limit maili: 503 bez kodu', capped.status === 503 && !capped.data?.dev, capped);
+  sqlRun(`UPDATE usage_daily SET mails = 0 WHERE day = '${day}'`);
+
+  // Limit próśb z jednego adresu IP (różne e-maile)
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+  const statuses = [];
+  for (let i = 0; i < 11; i++) {
+    statuses.push((await call('POST', '/auth/request', { body: { email: `ip${i}-${Date.now()}@example.com` } })).status);
+  }
+  check('limit próśb z jednego IP: 11. prośba → 429', statuses.slice(0, 10).every((x) => x === 202) && statuses[10] === 429, statuses);
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
 await management(session);
 await legacyRotate();
 await legacyDelete();
+await memberTokens();
+await accounts();
+await accountLink();
+await hardening();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
