@@ -1,0 +1,12 @@
+# Skan sekretów GitGuardian: testy zakładają konta na LOKALNYM Workerze stałymi hasłami testowymi
+# (np. 'dobrehaslo1') — to nie są prawdziwe dane logowania. Prawdziwe sekrety (klucz Resend, tokeny
+# Cloudflare) są tylko w sekretach Workera i GitHub Actions, nigdy w repo.
+version: 2
+secret:
+  ignored_paths:
+    - worker/scripts/smoke.mjs
+    - "**/*.spec.ts"
+  ignored_matches:
+    # Nazwa algorytmu hasła w worker/src/password.ts, nie hasło
+    - name: PASSWORD_ALGO
+      match: pbkdf2-sha256
