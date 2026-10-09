@@ -114,13 +114,24 @@ export async function deleteAccount(request: Request, env: Env): Promise<Respons
   }
   if (plan.personalSpaceId) statements.push(...removeSpace(plan.personalSpaceId));
   statements.push(
-    // Wszyscy członkowie konta (także usunięci i scaleni): bez imienia, bez kluczy, bez powiązania z kontem
-    env.DB.prepare('DELETE FROM member_tokens WHERE member_id IN (SELECT id FROM members WHERE user_id = ?)').bind(
-      user.id
-    ),
+    // Wszyscy członkowie konta — także usunięci i scaleni z nimi (scalony wiersz nie ma user_id, prowadzi do
+    // zachowanego przez merged_into, także łańcuchowo): bez imienia, bez kluczy, bez powiązania z kontem
     env.DB.prepare(
-      "UPDATE members SET name = 'Usunięte konto', user_id = NULL, removed_at = COALESCE(removed_at, ?) WHERE user_id = ?"
-    ).bind(now, user.id),
+      `WITH RECURSIVE mine(id) AS (
+         SELECT id FROM members WHERE user_id = ?1
+         UNION SELECT m.id FROM members m JOIN mine ON m.merged_into = mine.id
+       )
+       DELETE FROM member_tokens WHERE member_id IN (SELECT id FROM mine)`
+    ).bind(user.id),
+    env.DB.prepare(
+      `WITH RECURSIVE mine(id) AS (
+         SELECT id FROM members WHERE user_id = ?1
+         UNION SELECT m.id FROM members m JOIN mine ON m.merged_into = mine.id
+       )
+       UPDATE members SET name = 'Usunięte konto', removed_at = COALESCE(removed_at, ?2)
+        WHERE id IN (SELECT id FROM mine)`
+    ).bind(user.id, now),
+    env.DB.prepare('UPDATE members SET user_id = NULL WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM login_codes WHERE email = ?').bind(user.email),
     env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id)

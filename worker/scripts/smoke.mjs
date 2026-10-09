@@ -517,6 +517,11 @@ async function accountDeletion() {
   const personal = linked.data.spaces.find((s) => s.kind === 'personal');
   await call('POST', '/changes', { token: personal.memberToken, body: { changes: [{ id: 'g-usun-1', deleted: false, data: grave('g-usun-1') }] } });
   await call('POST', '/changes', { token: f3.data.memberToken, body: { changes: [{ id: 'g-usun-3', deleted: false, data: grave('g-usun-3') }] } });
+  // F4: D w mapie z sesją, potem ta sama osoba bez konta („Kacper K”) → link scala (zostaje wcześniejszy członek)
+  const f4 = await call('POST', '/spaces', { body: { name: 'F4', member: { name: 'Ewa', color: 'sky' } } });
+  await call('POST', '/join', { token: f4.data.invite, headers: { 'X-Session': d }, body: { name: 'Kacper', color: 'clay' } });
+  const dup = await call('POST', '/join', { token: f4.data.invite, body: { name: 'Kacper K', color: 'clay' } });
+  await call('POST', '/account/link', { token: d, body: { tokens: [dup.data.memberToken] } });
   sqlRun(`INSERT INTO photo_objects (key, space_id, bytes, created_at) VALUES ('${personal.spaceId}/p1/full', '${personal.spaceId}', 10, 1), ('${personal.spaceId}/p1/thumb', '${personal.spaceId}', 5, 1)`);
 
   const pv = await call('GET', '/account/deletion', { token: d });
@@ -542,6 +547,8 @@ async function accountDeletion() {
   check('F3 i Moje usunięte z grobami', sql(`SELECT COUNT(*) AS n FROM spaces WHERE id IN ('${f3.data.spaceId}', '${personal.spaceId}')`) === 0 && sql(`SELECT COUNT(*) AS n FROM graves WHERE space_id IN ('${f3.data.spaceId}', '${personal.spaceId}')`) === 0);
   check('zdjęcia Moje w kolejce kasowania', sql(`SELECT COUNT(*) AS n FROM photo_purge WHERE key LIKE '${personal.spaceId}/%'`) === 2);
   check('członkowie zanonimizowani', sql(`SELECT COUNT(*) AS n FROM members WHERE user_id = '${uid}'`) === 0 && sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${dInF2.data.memberId}' AND name = 'Usunięte konto' AND removed_at IS NOT NULL`) === 1);
+
+  check('scalony członek też zanonimizowany', sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${dup.data.memberId}' AND name = 'Usunięte konto'`) === 1);
 
   const again = await register(email, 'dobrehaslo1');
   check('ten sam e-mail: nowe konto po usunięciu', typeof again === 'string');
