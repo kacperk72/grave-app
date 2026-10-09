@@ -22,6 +22,14 @@
           <span class="row__sub">Dane konta znikną z tej przeglądarki, zostają na koncie</span>
         </span>
       </button>
+      <button type="button" class="row" (click)="deleteDialog.open()">
+        <span class="row__icon row__icon--danger"><app-icon name="trash" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title row__title--danger">Usuń konto</span>
+          <span class="row__sub">Usuwa konto, „Moje” i Twoje miejsce w mapach rodzinnych</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </button>
       } @else {
       <a class="row" routerLink="/logowanie">
         <span class="row__icon row__icon--dark"><app-icon name="users" [size]="20" /></span>
@@ -33,6 +41,10 @@
       </a>
       }
     </div>
+    <app-delete-account-dialog #deleteDialog (deleted)="accountNotice.set('Konto zostało usunięte')" />
+    @if (accountNotice(); as note) {
+    <p class="notice" role="status">{{ note }}</p>
+    }
   </section>
 
   <section class="group">
@@ -160,6 +172,35 @@
     }
   </section>
   }
+
+  <section class="group">
+    <h2>Informacje</h2>
+    <div class="card">
+      <a class="row" routerLink="/regulamin">
+        <span class="row__icon"><app-icon name="edit" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Regulamin</span>
+          <span class="row__sub">Wersja {{ termsVersion }} z {{ termsDate }}</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </a>
+      <a class="row" routerLink="/prywatnosc">
+        <span class="row__icon"><app-icon name="key" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Polityka prywatności</span>
+          <span class="row__sub">Jakie dane zbieramy i dlaczego</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </a>
+      <a class="row" [href]="'mailto:' + contact">
+        <span class="row__icon"><app-icon name="share" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Kontakt</span>
+          <span class="row__sub">{{ contact }}</span>
+        </span>
+      </a>
+    </div>
+  </section>
 
   @if (version()) {
   <p class="version">znajdzgroby.pl · wersja {{ version() }}</p>

@@ -8,6 +8,8 @@ import { markOnboardingSeen } from '../../core/services/onboarding';
 import { IconComponent } from '../../shared/components/icon.component';
 import { normalizeEmail, passwordProblem } from '../../shared/utils/account-rules';
 import { pluralPl } from '../../shared/utils/grave-display';
+import { TermsCheckboxComponent } from '../../shared/components/terms-checkbox.component';
+import { TERMS_VERSION } from '../../shared/legal';
 
 type Step = 'login' | 'email' | 'code' | 'password' | 'done';
 
@@ -17,7 +19,7 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
  */
 @Component({
   selector: 'app-login-page',
-  imports: [RouterLink, IconComponent],
+  imports: [RouterLink, IconComponent, TermsCheckboxComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="screen">
@@ -69,6 +71,9 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
           <button type="button" class="link" (click)="startSetup('register')">
             Nie mam konta — załóż
           </button>
+          <p class="legal">
+            <a routerLink="/regulamin">Regulamin</a> · <a routerLink="/prywatnosc">Polityka prywatności</a>
+          </p>
         }
         @case ('email') {
           <h1>{{ mode() === 'register' ? 'Załóż konto' : 'Nowe hasło' }}</h1>
@@ -116,7 +121,7 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
           </button>
         }
         @case ('password') {
-          <h1>Ustaw hasło</h1>
+          <h1>{{ accountExists() ? 'Nowe hasło' : 'Ustaw hasło' }}</h1>
           <p class="lead">Konto: {{ email() }}</p>
           <form (submit)="$event.preventDefault(); savePassword()">
             <label class="field"
@@ -137,7 +142,14 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
                 </button>
               </span>
             </label>
-            <button type="submit" class="cta" [disabled]="busy()">
+            @if (!accountExists()) {
+              <app-terms-checkbox [(accepted)]="termsAccepted" />
+            }
+            <button
+              type="submit"
+              class="cta"
+              [disabled]="busy() || (!accountExists() && !termsAccepted())"
+            >
               {{ busy() ? 'Zapisuję…' : 'Zapisz hasło' }}
             </button>
           </form>
@@ -155,6 +167,14 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
   `,
   styles: [
     `
+      .legal {
+        margin: 12px 0 0;
+        font-size: 13px;
+        color: var(--ink-faint);
+      }
+      .legal a {
+        color: var(--ink-muted);
+      }
       .screen {
         max-width: 520px;
         margin: 0 auto;
@@ -257,6 +277,9 @@ export class LoginPageComponent {
   readonly error = signal<string | null>(null);
   readonly resendIn = signal(0);
   readonly doneText = signal('');
+  /** Konto już istnieje (nowe hasło) — wtedy bez checkboxa zgody. */
+  readonly accountExists = signal(false);
+  readonly termsAccepted = signal(false);
   private setupToken = '';
   private timer?: ReturnType<typeof setInterval>;
 
@@ -277,6 +300,7 @@ export class LoginPageComponent {
     this.run(async () => {
       const res = await this.account.verify({ link });
       this.setupToken = res.setupToken;
+      this.accountExists.set(res.exists);
       this.email.set(res.email);
       this.step.set('password');
     });
@@ -316,6 +340,7 @@ export class LoginPageComponent {
     this.run(async () => {
       const res = await this.account.verify({ email: this.email(), code });
       this.setupToken = res.setupToken;
+      this.accountExists.set(res.exists);
       this.step.set('password');
     });
   }
@@ -326,8 +351,13 @@ export class LoginPageComponent {
       this.error.set(problem);
       return;
     }
+    if (!this.accountExists() && !this.termsAccepted()) {
+      this.error.set('Zaakceptuj regulamin, żeby założyć konto');
+      return;
+    }
+    const acceptTerms = this.accountExists() ? undefined : TERMS_VERSION;
     this.run(async () =>
-      this.finish(await this.account.setPassword(this.setupToken, this.password())),
+      this.finish(await this.account.setPassword(this.setupToken, this.password(), acceptTerms)),
     );
   }
 

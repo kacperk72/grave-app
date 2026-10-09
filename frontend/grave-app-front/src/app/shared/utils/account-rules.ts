@@ -1,3 +1,5 @@
+import { pluralPl } from './grave-display';
+
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 128;
 const BANNER_PAUSE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -23,4 +25,40 @@ export function shouldShowLoginBanner(input: {
 }): boolean {
   if (input.loggedIn || input.graveCount === 0) return false;
   return input.dismissedAt === null || input.now - input.dismissedAt > BANNER_PAUSE_MS;
+}
+
+export type FamilyEffect = 'leave' | 'transfer' | 'delete';
+
+export interface FamilyDeletionEffect {
+  spaceId: string;
+  name: string;
+  effect: FamilyEffect;
+  heir?: string;
+}
+
+/** Odpowiedź `GET /account/deletion`. */
+export interface DeletionPreview {
+  personal: { graves: number; photos: number };
+  families: FamilyDeletionEffect[];
+}
+
+export function personalDeletionText({ graves, photos }: { graves: number; photos: number }): string {
+  if (graves === 0 && photos === 0) return '„Moje” jest puste';
+  return `„Moje” — ${graves} ${pluralPl(graves, 'grób', 'groby', 'grobów')} i ${photos} ${pluralPl(
+    photos,
+    'zdjęcie',
+    'zdjęcia',
+    'zdjęć'
+  )} zostanie usuniętych`;
+}
+
+export function familyDeletionText(f: FamilyDeletionEffect): string {
+  switch (f.effect) {
+    case 'transfer':
+      return `„${f.name}” — wychodzisz, rola założyciela przejdzie na: ${f.heir}. Twoje groby zostają dla rodziny.`;
+    case 'delete':
+      return `„${f.name}” — nikogo poza Tobą tu nie ma, mapa zostanie usunięta razem z grobami i zdjęciami.`;
+    default:
+      return `„${f.name}” — wychodzisz. Twoje groby zostają dla rodziny.`;
+  }
 }

@@ -1,4 +1,5 @@
 import type { Env } from './index';
+import { parseTermsVersion } from './legal';
 import { Session, Space, requireMember, requireOwner } from './auth';
 import { HttpError, json, readJson, readOptionalJson } from './http';
 import { userFromSession } from './accounts';
@@ -10,7 +11,7 @@ const MAX_NAME_CHARS = 40;
 const MAX_MEMBERS_PER_SPACE = 50;
 const DEFAULT_SPACE_NAME = 'Rodzinna mapa';
 /** Ile czasu po ostatnim użyciu klucza z linku mapa uchodzi za używaną przez niepodpisane telefony. */
-const LEGACY_ACTIVITY_MS = 30 * 24 * 60 * 60 * 1000;
+export const LEGACY_ACTIVITY_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Imię albo nazwa mapy: zwinięte spacje, 1–40 znaków Unicode (emoji = 1 znak). */
 export function parseName(value: unknown, label: string): string {
@@ -38,6 +39,8 @@ interface NewMember {
   color: string;
   role: 'owner' | 'member';
   userId?: string | null;
+  /** Wersja zaakceptowanego regulaminu (z ciała zapytania); data zgody = chwila zapisu. */
+  termsVersion?: number | null;
 }
 
 /** Członek i jego pierwszy klucz urządzenia. `members.token_hash` zostaje wypełnione (powrót do starszej wersji). */
@@ -45,9 +48,22 @@ export function insertMember(env: Env, m: NewMember): D1PreparedStatement[] {
   const now = Date.now();
   return [
     env.DB.prepare(
-      `INSERT INTO members (id, space_id, token_hash, name, color, role, joined_at, last_seen_at, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(m.id, m.spaceId, m.tokenHash, m.name, m.color, m.role, now, now, m.userId ?? null),
+      `INSERT INTO members (id, space_id, token_hash, name, color, role, joined_at, last_seen_at, user_id,
+         terms_version, terms_accepted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      m.id,
+      m.spaceId,
+      m.tokenHash,
+      m.name,
+      m.color,
+      m.role,
+      now,
+      now,
+      m.userId ?? null,
+      m.termsVersion ?? null,
+      m.termsVersion ? now : null
+    ),
     env.DB.prepare('INSERT INTO member_tokens (token_hash, member_id, created_at) VALUES (?, ?, ?)').bind(
       m.tokenHash,
       m.id,
@@ -60,6 +76,7 @@ export async function createSpace(request: Request, env: Env): Promise<Response>
   const body = (await readOptionalJson(request)) as {
     name?: unknown;
     member?: { name?: unknown; color?: unknown };
+    acceptTerms?: unknown;
   } | null;
   const invite = newToken();
   const inviteHash = await sha256(invite);
@@ -90,6 +107,7 @@ export async function createSpace(request: Request, env: Env): Promise<Response>
       name: memberName,
       color,
       role: 'owner',
+      termsVersion: parseTermsVersion(body.acceptTerms),
     }),
   ]);
   return json({ spaceId, name, invite, memberToken, memberId, role: 'owner' }, 201);
@@ -112,7 +130,7 @@ export async function invitePreview(env: Env, space: Space): Promise<Response> {
 }
 
 export async function joinSpace(request: Request, env: Env, space: Space): Promise<Response> {
-  const body = (await readJson(request)) as { name?: unknown; color?: unknown } | null;
+  const body = (await readJson(request)) as { name?: unknown; color?: unknown; acceptTerms?: unknown } | null;
   const name = parseName(body?.name, 'Imię');
   const color = parseColor(body?.color);
 
@@ -156,6 +174,7 @@ export async function joinSpace(request: Request, env: Env, space: Space): Promi
     // Mapa sprzed list członków nie ma założyciela — zostaje nim pierwszy podpisany
     role: (counts?.owners ?? 0) > 0 ? 'member' : 'owner',
     userId: user?.id ?? null,
+    termsVersion: parseTermsVersion(body?.acceptTerms),
   };
   try {
     await env.DB.batch(insertMember(env, member));

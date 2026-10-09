@@ -5,6 +5,8 @@ import { Grave, PhotoVariant } from '../../shared/models/grave.model';
 import { Member, Profile, SpaceRole } from '../../shared/models/space.model';
 import { RemoteChange } from './indexeddb.service';
 import { LinkedSpace } from '../../shared/utils/account-link';
+import { acceptedTermsVersion } from '../../shared/legal';
+import { DeletionPreview } from '../../shared/utils/account-rules';
 
 export class ApiError extends Error {
   constructor(
@@ -38,7 +40,14 @@ export interface CreatedSpace extends JoinResult {
 
 export interface AuthResult {
   session: string;
-  user: { id: string; email: string };
+  /** `termsVersion` — wersja regulaminu zaakceptowana na koncie (null = konto sprzed regulaminu). */
+  user: { id: string; email: string; termsVersion?: number | null };
+}
+
+/** Wersja regulaminu zaakceptowana na tym urządzeniu — serwer zapisuje ją przy członku mapy. */
+function termsField(): { acceptTerms?: number } {
+  const v = acceptedTermsVersion();
+  return v > 0 ? { acceptTerms: v } : {};
 }
 
 export interface PullResponse {
@@ -104,7 +113,7 @@ export class FamilyApi {
   }
 
   createSpace(name: string, member: Profile): Promise<CreatedSpace> {
-    return this.request('POST', '/spaces', null, { name, member });
+    return this.request('POST', '/spaces', null, { name, member, ...termsField() });
   }
 
   preview(invite: string): Promise<InvitePreview> {
@@ -113,7 +122,7 @@ export class FamilyApi {
 
   /** Z sesją konta członek jest przypinany do konta (bez duplikatu, jeśli konto już jest w mapie). */
   join(invite: string, profile: Profile, session?: string): Promise<JoinResult> {
-    return this.request('POST', '/join', invite, profile, session ? { 'X-Session': session } : {});
+    return this.request('POST', '/join', invite, { ...profile, ...termsField() }, session ? { 'X-Session': session } : {});
   }
 
   authRequest(email: string): Promise<{ ok: true }> {
@@ -122,12 +131,17 @@ export class FamilyApi {
 
   authVerify(
     body: { email: string; code: string } | { link: string }
-  ): Promise<{ setupToken: string; email: string }> {
+  ): Promise<{ setupToken: string; email: string; exists: boolean }> {
     return this.request('POST', '/auth/verify', null, body);
   }
 
-  authPassword(setupToken: string, password: string): Promise<AuthResult> {
-    return this.request('POST', '/auth/password', null, { setupToken, password });
+  /** `acceptTerms` — wersja regulaminu, wymagana przy zakładaniu konta. */
+  authPassword(setupToken: string, password: string, acceptTerms?: number): Promise<AuthResult> {
+    return this.request('POST', '/auth/password', null, {
+      setupToken,
+      password,
+      ...(acceptTerms ? { acceptTerms } : {}),
+    });
   }
 
   authLogin(email: string, password: string): Promise<AuthResult> {
@@ -141,6 +155,14 @@ export class FamilyApi {
   async accountLink(session: string, tokens: string[]): Promise<LinkedSpace[]> {
     return (await this.request<{ spaces: LinkedSpace[] }>('POST', '/account/link', session, { tokens }))
       .spaces;
+  }
+
+  accountDeletionPreview(session: string): Promise<DeletionPreview> {
+    return this.request('GET', '/account/deletion', session);
+  }
+
+  deleteAccount(session: string, password: string): Promise<unknown> {
+    return this.request('POST', '/account/delete', session, { password });
   }
 
   spaceInfo(token: string): Promise<{ spaceId: string; name: string; graves: number }> {

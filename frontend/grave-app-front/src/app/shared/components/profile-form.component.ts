@@ -5,11 +5,13 @@ import { IconComponent } from './icon.component';
 import { Profile } from '../models/space.model';
 import { AVATAR_COLORS, AVATAR_COLOR_LABELS, AvatarColor, colorFor } from '../utils/member-display';
 import { readProfile } from '../../core/services/profile';
+import { TermsCheckboxComponent } from './terms-checkbox.component';
+import { markTermsAccepted, needsTermsAcceptance } from '../legal';
 
 /** Podpis tego telefonu na mapie: imię i kolor awatara, z podglądem. */
 @Component({
   selector: 'app-profile-form',
-  imports: [AvatarComponent, IconComponent],
+  imports: [AvatarComponent, IconComponent, TermsCheckboxComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <form class="pf" (submit)="$event.preventDefault(); submit()">
@@ -40,6 +42,9 @@ import { readProfile } from '../../core/services/profile';
         ></button>
         }
       </div>
+      @if (showTerms()) {
+      <app-terms-checkbox [(accepted)]="termsAccepted" />
+      }
       <button type="submit" class="cta" [disabled]="busy() || !valid()">
         {{ busy() ? busyLabel() : submitLabel() }}
         <span class="cta__arrow"><app-icon name="arrow-right" [size]="20" /></span>
@@ -114,9 +119,14 @@ export class ProfileFormComponent {
   private readonly picked = signal<AvatarColor | null>(this.saved?.color ?? null);
   readonly color = computed(() => this.picked() ?? colorFor(this.name().trim() || '?'));
 
+  /** Mapa rodzinna wysyła dane na serwer — checkbox zgody, jeśli ta wersja nie była zaakceptowana tutaj. */
+  readonly requireTerms = input(false);
+  readonly showTerms = computed(() => this.requireTerms() && needsTermsAcceptance());
+  readonly termsAccepted = signal(false);
+
   readonly valid = computed(() => {
     const chars = [...this.name().replace(/\s+/g, ' ').trim()].length;
-    return chars > 0 && chars <= 40;
+    return chars > 0 && chars <= 40 && (!this.showTerms() || this.termsAccepted());
   });
 
   pick(color: AvatarColor): void {
@@ -125,6 +135,7 @@ export class ProfileFormComponent {
 
   submit(): void {
     if (!this.valid() || this.busy()) return;
+    if (this.showTerms()) markTermsAccepted();
     this.submitted.emit({ name: this.name().replace(/\s+/g, ' ').trim(), color: this.color() });
   }
 }

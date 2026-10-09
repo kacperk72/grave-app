@@ -12,6 +12,8 @@ import { LOCAL_SPACE_ID } from '../../shared/models/space.model';
 import { syncStatusText } from '../../shared/utils/sync-status';
 import { IconComponent, IconName } from '../../shared/components/icon.component';
 import { pluralPl } from '../../shared/utils/grave-display';
+import { CONTACT_EMAIL, TERMS_DATE, TERMS_VERSION } from '../../shared/legal';
+import { DeleteAccountDialogComponent } from './delete-account-dialog.component';
 
 interface StatusMessage {
   type: 'success' | 'error' | 'info';
@@ -21,7 +23,7 @@ interface StatusMessage {
 
 @Component({
   selector: 'app-settings-page',
-  imports: [IconComponent, RouterLink, AvatarStackComponent],
+  imports: [IconComponent, RouterLink, AvatarStackComponent, DeleteAccountDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './settings-page.component.html',
   styleUrl: './settings-page.component.scss',
@@ -34,6 +36,10 @@ export class SettingsPageComponent {
 
   readonly spaces = inject(SpaceService);
   readonly account = inject(AccountService);
+  readonly contact = CONTACT_EMAIL;
+  readonly accountNotice = signal<string | null>(null);
+  readonly termsVersion = TERMS_VERSION;
+  readonly termsDate = TERMS_DATE;
 
   /** Rodzinne mapy w tym telefonie — wiersze listy z nazwą, stanem i awatarami. */
   readonly mapRows = computed(() =>

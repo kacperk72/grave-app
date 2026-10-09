@@ -80,6 +80,16 @@ export const routes: Routes = [
       import('./features/account/login-page.component').then((m) => m.LoginPageComponent),
   },
   {
+    path: 'regulamin',
+    loadComponent: () =>
+      import('./features/legal/terms-page.component').then((m) => m.TermsPageComponent),
+  },
+  {
+    path: 'prywatnosc',
+    loadComponent: () =>
+      import('./features/legal/privacy-page.component').then((m) => m.PrivacyPageComponent),
+  },
+  {
     path: '**',
     redirectTo: 'start',
   },

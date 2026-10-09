@@ -48,6 +48,7 @@ import { pluralPl } from '../../shared/utils/grave-display';
       }
 
       <app-profile-form
+        [requireTerms]="true"
         nameLabel="Twój podpis na mapie"
         submitLabel="Utwórz mapę"
         busyLabel="Tworzę mapę…"

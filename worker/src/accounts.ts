@@ -2,6 +2,7 @@ import type { Env } from './index';
 import { HttpError, json, readJson } from './http';
 import { currentDay, newToken, sha256 } from './util';
 import { sendLoginMail } from './mail';
+import { TERMS_VERSION, parseTermsVersion } from './legal';
 import { insertMember } from './members';
 import {
   PASSWORD_ALGO,
@@ -194,11 +195,13 @@ export async function verifyCode(request: Request, env: Env): Promise<Response> 
     .bind(now, await sha256(setupToken), now + SETUP_TTL_MS, row.id)
     .run();
   if (!used.meta.changes) throw new HttpError(401, BAD_CODE);
-  return json({ setupToken, email: row.email });
+  // Tylko właściciel skrzynki zna kod — może się dowiedzieć, czy konto już jest (nowe hasło vs zakładanie)
+  const exists = await env.DB.prepare('SELECT 1 AS yes FROM users WHERE email = ?').bind(row.email).first();
+  return json({ setupToken, email: row.email, exists: exists !== null });
 }
 
 export async function setPassword(request: Request, env: Env): Promise<Response> {
-  const body = (await readJson(request)) as { setupToken?: unknown; password?: unknown } | null;
+  const body = (await readJson(request)) as { setupToken?: unknown; password?: unknown; acceptTerms?: unknown } | null;
   const password = checkPassword(body?.password);
   const now = Date.now();
   const setupHash = typeof body?.setupToken === 'string' ? await sha256(body.setupToken) : '';
@@ -209,11 +212,15 @@ export async function setPassword(request: Request, env: Env): Promise<Response>
     .first<{ id: string; email: string }>();
   if (!code) throw new HttpError(401, 'Czas na ustawienie hasła minął — poproś o nowy kod');
 
+  const existing = await env.DB.prepare('SELECT id, terms_version FROM users WHERE email = ?')
+    .bind(code.email)
+    .first<{ id: string; terms_version: number | null }>();
+  // Zakładanie konta wymaga zgody na bieżący regulamin; nowe hasło istniejącego konta — nie
+  if (!existing && parseTermsVersion(body?.acceptTerms) !== TERMS_VERSION) {
+    throw new HttpError(400, 'Zaakceptuj regulamin, żeby założyć konto');
+  }
   const salt = randomBase64(16);
   const hash = await hashPassword(password, salt, PASSWORD_ITERATIONS);
-  const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?')
-    .bind(code.email)
-    .first<{ id: string }>();
   const userId = existing?.id ?? crypto.randomUUID();
   await env.DB.batch([
     existing
@@ -222,18 +229,23 @@ export async function setPassword(request: Request, env: Env): Promise<Response>
              failed_logins = 0, locked_until = NULL, updated_at = ? WHERE id = ?`
         ).bind(hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, userId)
       : env.DB.prepare(
-          `INSERT INTO users (id, email, password_hash, password_salt, password_algo, password_iterations, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(userId, code.email, hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, now),
+          `INSERT INTO users (id, email, password_hash, password_salt, password_algo, password_iterations,
+             created_at, updated_at, terms_version, terms_accepted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(userId, code.email, hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, now, TERMS_VERSION, now),
     // Nowe hasło wylogowuje wszystkie urządzenia; setupToken jednorazowy
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
     env.DB.prepare('UPDATE login_codes SET setup_hash = NULL WHERE id = ?').bind(code.id),
   ]);
   const session = await createSession(env, userId);
-  return json({ session, user: { id: userId, email: code.email } });
+  const termsVersion = existing ? existing.terms_version : TERMS_VERSION;
+  return json({ session, user: { id: userId, email: code.email, termsVersion } });
 }
 
-type UserRow = {
+export const USER_COLUMNS =
+  'id, email, password_hash, password_salt, password_algo, password_iterations, failed_logins, locked_until, terms_version';
+
+export type UserRow = {
   id: string;
   email: string;
   password_hash: string;
@@ -242,28 +254,19 @@ type UserRow = {
   password_iterations: number;
   failed_logins: number;
   locked_until: number | null;
+  terms_version: number | null;
 };
 
-export async function login(request: Request, env: Env): Promise<Response> {
-  const body = (await readJson(request)) as { email?: unknown; password?: unknown } | null;
-  const email = normalizeEmail(body?.email);
-  const password = typeof body?.password === 'string' ? body.password : '';
-  const now = Date.now();
-  const user = email
-    ? await env.DB.prepare(
-        `SELECT id, email, password_hash, password_salt, password_algo, password_iterations, failed_logins, locked_until
-           FROM users WHERE email = ?`
-      )
-        .bind(email)
-        .first<UserRow>()
-    : null;
-
-  if (!user) {
-    await hashPassword(password, DUMMY_SALT, PASSWORD_ITERATIONS);
-    throw new HttpError(401, BAD_LOGIN);
-  }
-  // Każda próba liczona atomowo PRZED sprawdzeniem hasła, więc równoległe zgadywanie też blokuje.
-  // 5. próba zakłada blokadę na 15 minut; po jej wygaśnięciu licznik zaczyna od nowa.
+/**
+ * Sprawdza hasło konta z licznikiem prób: próba liczona atomowo PRZED PBKDF2 (równoległe zgadywanie też
+ * blokuje), 5. próba zakłada blokadę na 15 minut, dobre hasło zeruje licznik. 429 przy blokadzie.
+ */
+export async function checkUserPassword(
+  env: Env,
+  user: UserRow,
+  password: string,
+  now = Date.now()
+): Promise<boolean> {
   const attempt = await env.DB.prepare(
     `UPDATE users
         SET failed_logins = (CASE WHEN locked_until IS NOT NULL THEN 0 ELSE failed_logins END) + 1,
@@ -277,7 +280,29 @@ export async function login(request: Request, env: Env): Promise<Response> {
   if (!attempt) {
     throw new HttpError(429, 'Za dużo prób. Spróbuj za kilkanaście minut albo ustaw nowe hasło.');
   }
-  if (!(await verifyPassword(password, user))) throw new HttpError(401, BAD_LOGIN);
+  if (!(await verifyPassword(password, user))) return false;
+  await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').bind(user.id).run();
+  return true;
+}
+
+export async function login(request: Request, env: Env): Promise<Response> {
+  const body = (await readJson(request)) as { email?: unknown; password?: unknown } | null;
+  const email = normalizeEmail(body?.email);
+  const password = typeof body?.password === 'string' ? body.password : '';
+  const now = Date.now();
+  const user = email
+    ? await env.DB.prepare(
+        `SELECT ${USER_COLUMNS} FROM users WHERE email = ?`
+      )
+        .bind(email)
+        .first<UserRow>()
+    : null;
+
+  if (!user) {
+    await hashPassword(password, DUMMY_SALT, PASSWORD_ITERATIONS);
+    throw new HttpError(401, BAD_LOGIN);
+  }
+  if (!(await checkUserPassword(env, user, password, now))) throw new HttpError(401, BAD_LOGIN);
 
   if (needsRehash(user.password_algo, user.password_iterations)) {
     const salt = randomBase64(16);
@@ -289,12 +314,9 @@ export async function login(request: Request, env: Env): Promise<Response> {
       .bind(hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, user.id)
       .run();
   }
-  // Dobre hasło zeruje licznik (także próbę policzoną wyżej)
-  await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?')
-    .bind(user.id)
-    .run();
   const session = await createSession(env, user.id);
-  return json({ session, user: { id: user.id, email: user.email } });
+  // Wersja zgody z konta: aplikacja na nowym urządzeniu nie pyta o regulamin drugi raz
+  return json({ session, user: { id: user.id, email: user.email, termsVersion: user.terms_version } });
 }
 
 export async function logout(request: Request, env: Env): Promise<Response> {
