@@ -104,8 +104,8 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await purgePhotos(env);
-    await cleanupAuth(env);
+    // Osobno: błąd kasowania zdjęć nie może zablokować sprzątania kodów i sesji (okresy z polityki prywatności)
+    await Promise.allSettled([purgePhotos(env), cleanupAuth(env)]);
   },
 } satisfies ExportedHandler<Env>;
 

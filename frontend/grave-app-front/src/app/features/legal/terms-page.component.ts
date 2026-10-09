@@ -34,14 +34,14 @@ import { CONTACT_EMAIL } from '../../shared/legal';
       <ol>
         <li>Konto może założyć osoba pełnoletnia. Do założenia konta potrzebny jest adres e-mail potwierdzony kodem wysłanym w wiadomości.</li>
         <li>Hasło trzymaj w tajemnicy. Jeśli ktoś mógł je poznać — ustaw nowe przez „Nie pamiętam hasła”.</li>
-        <li>Konto usuniesz w każdej chwili w Ustawieniach („Usuń konto”) albo pisząc na {{ contact }}. Usunięcie kasuje konto i mapę „Moje” razem z grobami i zdjęciami; z map rodzinnych wychodzisz — dodane przez Ciebie groby zostają dla rodziny, rola założyciela przechodzi na osobę, która jest w mapie najdłużej, a mapa, w której nie ma już nikogo poza Tobą, jest usuwana.</li>
+        <li>Konto usuniesz w każdej chwili w Ustawieniach („Usuń konto”) albo pisząc na {{ contact }}. Usunięcie kasuje konto i mapę „Moje” razem z grobami i zdjęciami; z map rodzinnych wychodzisz — dodane przez Ciebie groby zostają dla rodziny, rola założyciela przechodzi na osobę, która jest w mapie najdłużej, a mapa, w której nie ma już nikogo poza Tobą, jest usuwana — chyba że w ostatnich 30 dniach korzystały z niej telefony ze starszą wersją aplikacji; wtedy mapa zostaje dla nich.</li>
       </ol>
 
       <h2>5. Mapy rodzinne</h2>
       <ol>
         <li>Z mapy rodzinnej mogą korzystać osoby pełnoletnie.</li>
         <li>Link zaproszenia działa jak klucz: każdy, kto go ma, może dołączyć i zobaczyć groby. Udostępniaj go tylko zaufanym osobom. Założyciel mapy może zmienić link i usuwać osoby z mapy.</li>
-        <li>Członkowie mapy widzą jej groby, zdjęcia, swoje podpisy (imię i kolor) oraz to, kto ostatnio zmieniał grób.</li>
+        <li>Członkowie mapy widzą jej groby, zdjęcia, swoje podpisy (imię i kolor), to, kto ostatnio zmieniał grób, oraz kiedy kto ostatnio korzystał z mapy.</li>
       </ol>
 
       <h2>6. Treści dodawane przez użytkowników</h2>

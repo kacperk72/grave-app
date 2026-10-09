@@ -15,7 +15,7 @@ import { CONTACT_EMAIL } from '../../shared/legal';
 
       <h2>2. Jakie dane i kiedy</h2>
       <p><strong>Aplikacja bez konta i bez mapy rodzinnej.</strong> Groby, zdjęcia i ustawienia zostają w pamięci Twojego urządzenia — nie wysyłamy ich na serwer. Przy wejściu na stronę i wyświetlaniu mapy Twój adres IP widzą technicznie serwer strony i dostawcy kafelków mapy (punkt 4).</p>
-      <p><strong>Mapa rodzinna.</strong> Na serwerze zapisujemy: Twój podpis w mapie (imię i kolor), groby mapy (lokalizacja GPS, cmentarz, dane osób pochowanych, opisy, terminy opłat), zdjęcia, informację, kto ostatnio zmieniał grób, oraz wersję, datę i godzinę zaakceptowania regulaminu.</p>
+      <p><strong>Mapa rodzinna.</strong> Na serwerze zapisujemy: Twój podpis w mapie (imię i kolor), groby mapy (lokalizacja GPS, cmentarz, dane osób pochowanych, opisy, terminy opłat), zdjęcia, informację, kto ostatnio zmieniał grób, kiedy ostatnio korzystałeś z mapy (widzą to jej członkowie), oraz wersję, datę i godzinę zaakceptowania regulaminu.</p>
       <p><strong>Konto.</strong> Dodatkowo: adres e-mail, hasło w postaci skrótu (nie znamy Twojego hasła), sesje zalogowanych urządzeń, skrót adresu IP przy prośbie o kod z maila (ochrona przed nadużyciami) oraz datę i wersję zaakceptowanego regulaminu.</p>
       <p>Dane osób zmarłych nie są danymi osobowymi w rozumieniu RODO, ale opisy i zdjęcia mogą dotyczyć żyjących osób — dodawaj je z rozwagą.</p>
 
@@ -42,9 +42,9 @@ import { CONTACT_EMAIL } from '../../shared/legal';
         <tr><th>Dane</th><th>Okres</th></tr>
         <tr><td>konto, e-mail, skrót hasła, wersja oraz data i godzina zgody</td><td>do usunięcia konta</td></tr>
         <tr><td>sesje urządzeń</td><td>do wylogowania albo 365 dni bez korzystania z aplikacji</td></tr>
-        <tr><td>kody z maila i skrót adresu IP</td><td>24 godziny</td></tr>
+        <tr><td>kody z maila i skrót adresu IP</td><td>do 48 godzin (codzienne sprzątanie kasuje kody starsze niż doba)</td></tr>
         <tr><td>dane w mapie rodzinnej</td><td>do usunięcia grobu, mapy albo konta; po usunięciu konta Twój podpis w mapach zastępujemy napisem „Usunięte konto”</td></tr>
-        <tr><td>zdjęcia usuniętych map</td><td>do 3 dni po usunięciu</td></tr>
+        <tr><td>zdjęcia usuniętych map</td><td>zwykle do kilku dni po usunięciu (darmowa infrastruktura pozwala kasować ograniczoną liczbę plików dziennie)</td></tr>
         <tr><td>dzienniki serwera aplikacji</td><td>do 3 dni</td></tr>
         <tr><td>wiadomości wysłane na adres kontaktowy</td><td>do zakończenia sprawy, najdłużej rok</td></tr>
       </table>

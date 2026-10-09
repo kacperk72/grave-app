@@ -34,7 +34,12 @@ import { Profile } from '../../shared/models/space.model';
       } @else {
       <h2 id="pp-title">Rodzinna mapa ma teraz listę osób</h2>
       <p>Podpisz się, żeby rodzina widziała, kto ma dostęp do mapy „{{ space.name }}".</p>
-      <app-profile-form submitLabel="Zapisz" [busy]="busy()" (submitted)="save(space.id, $event)" />
+      <app-profile-form
+        submitLabel="Zapisz"
+        [requireTerms]="true"
+        [busy]="busy()"
+        (submitted)="save(space.id, $event)"
+      />
       } @if (error()) {
       <p class="error" role="alert">{{ error() }}</p>
       }
