@@ -69,6 +69,9 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
           <button type="button" class="link" (click)="startSetup('register')">
             Nie mam konta — załóż
           </button>
+          <p class="legal">
+            <a routerLink="/regulamin">Regulamin</a> · <a routerLink="/prywatnosc">Polityka prywatności</a>
+          </p>
         }
         @case ('email') {
           <h1>{{ mode() === 'register' ? 'Załóż konto' : 'Nowe hasło' }}</h1>
@@ -155,6 +158,14 @@ type Step = 'login' | 'email' | 'code' | 'password' | 'done';
   `,
   styles: [
     `
+      .legal {
+        margin: 12px 0 0;
+        font-size: 13px;
+        color: var(--ink-faint);
+      }
+      .legal a {
+        color: var(--ink-muted);
+      }
       .screen {
         max-width: 520px;
         margin: 0 auto;

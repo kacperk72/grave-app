@@ -161,6 +161,35 @@
   </section>
   }
 
+  <section class="group">
+    <h2>Informacje</h2>
+    <div class="card">
+      <a class="row" routerLink="/regulamin">
+        <span class="row__icon"><app-icon name="edit" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Regulamin</span>
+          <span class="row__sub">Wersja {{ termsVersion }} z {{ termsDate }}</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </a>
+      <a class="row" routerLink="/prywatnosc">
+        <span class="row__icon"><app-icon name="key" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Polityka prywatności</span>
+          <span class="row__sub">Jakie dane zbieramy i dlaczego</span>
+        </span>
+        <app-icon class="row__chevron" name="chevron-right" [size]="18" />
+      </a>
+      <a class="row" [href]="'mailto:' + contact">
+        <span class="row__icon"><app-icon name="share" [size]="20" /></span>
+        <span class="row__text">
+          <span class="row__title">Kontakt</span>
+          <span class="row__sub">{{ contact }}</span>
+        </span>
+      </a>
+    </div>
+  </section>
+
   @if (version()) {
   <p class="version">znajdzgroby.pl · wersja {{ version() }}</p>
   }

@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { IconComponent } from '../../shared/components/icon.component';
 import { markOnboardingSeen } from '../../core/services/onboarding';
 
 @Component({
   selector: 'app-welcome-page',
-  imports: [IconComponent],
+  imports: [IconComponent, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="welcome">
@@ -54,11 +54,25 @@ import { markOnboardingSeen } from '../../core/services/onboarding';
         <button type="button" class="import" (click)="loginExisting()">
           Mam już konto — zaloguj się
         </button>
+        <p class="legal">
+          <a routerLink="/regulamin">Regulamin</a> · <a routerLink="/prywatnosc">Polityka prywatności</a>
+        </p>
       </div>
     </div>
   `,
   styles: [
     `
+      .legal {
+        margin: 4px 0 0;
+        text-align: center;
+        font-size: 13px;
+        opacity: 0.8;
+      }
+      .legal a {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
       :host {
         display: block;
       }

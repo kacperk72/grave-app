@@ -12,6 +12,7 @@ import { LOCAL_SPACE_ID } from '../../shared/models/space.model';
 import { syncStatusText } from '../../shared/utils/sync-status';
 import { IconComponent, IconName } from '../../shared/components/icon.component';
 import { pluralPl } from '../../shared/utils/grave-display';
+import { CONTACT_EMAIL, TERMS_DATE, TERMS_VERSION } from '../../shared/legal';
 
 interface StatusMessage {
   type: 'success' | 'error' | 'info';
@@ -34,6 +35,9 @@ export class SettingsPageComponent {
 
   readonly spaces = inject(SpaceService);
   readonly account = inject(AccountService);
+  readonly contact = CONTACT_EMAIL;
+  readonly termsVersion = TERMS_VERSION;
+  readonly termsDate = TERMS_DATE;
 
   /** Rodzinne mapy w tym telefonie — wiersze listy z nazwą, stanem i awatarami. */
   readonly mapRows = computed(() =>
