@@ -23,6 +23,7 @@
  */
 
 import { HttpError, corsHeaders, json, readJson } from './http';
+import { accountDeletionPreview, deleteAccount } from './deletion';
 import { cleanupAuth } from './cleanup';
 import { currentDay } from './util';
 import { Session, Space, authenticate, spaceFromInvite } from './auth';
@@ -134,6 +135,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === 'POST' && path === '/auth/logout') return logout(request, env);
   if (request.method === 'GET' && path === '/account') return getAccount(request, env);
   if (request.method === 'POST' && path === '/account/link') return linkAccount(request, env);
+  if (request.method === 'GET' && path === '/account/deletion') return accountDeletionPreview(request, env);
+  if (request.method === 'POST' && path === '/account/delete') return deleteAccount(request, env);
 
   const session = await authenticate(request, env);
   const space = session.space;

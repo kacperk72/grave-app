@@ -11,7 +11,7 @@ const MAX_NAME_CHARS = 40;
 const MAX_MEMBERS_PER_SPACE = 50;
 const DEFAULT_SPACE_NAME = 'Rodzinna mapa';
 /** Ile czasu po ostatnim użyciu klucza z linku mapa uchodzi za używaną przez niepodpisane telefony. */
-const LEGACY_ACTIVITY_MS = 30 * 24 * 60 * 60 * 1000;
+export const LEGACY_ACTIVITY_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Imię albo nazwa mapy: zwinięte spacje, 1–40 znaków Unicode (emoji = 1 znak). */
 export function parseName(value: unknown, label: string): string {

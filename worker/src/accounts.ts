@@ -242,7 +242,10 @@ export async function setPassword(request: Request, env: Env): Promise<Response>
   return json({ session, user: { id: userId, email: code.email, termsVersion } });
 }
 
-type UserRow = {
+export const USER_COLUMNS =
+  'id, email, password_hash, password_salt, password_algo, password_iterations, failed_logins, locked_until, terms_version';
+
+export type UserRow = {
   id: string;
   email: string;
   password_hash: string;
@@ -254,27 +257,16 @@ type UserRow = {
   terms_version: number | null;
 };
 
-export async function login(request: Request, env: Env): Promise<Response> {
-  const body = (await readJson(request)) as { email?: unknown; password?: unknown } | null;
-  const email = normalizeEmail(body?.email);
-  const password = typeof body?.password === 'string' ? body.password : '';
-  const now = Date.now();
-  const user = email
-    ? await env.DB.prepare(
-        `SELECT id, email, password_hash, password_salt, password_algo, password_iterations, failed_logins, locked_until,
-                terms_version
-           FROM users WHERE email = ?`
-      )
-        .bind(email)
-        .first<UserRow>()
-    : null;
-
-  if (!user) {
-    await hashPassword(password, DUMMY_SALT, PASSWORD_ITERATIONS);
-    throw new HttpError(401, BAD_LOGIN);
-  }
-  // Każda próba liczona atomowo PRZED sprawdzeniem hasła, więc równoległe zgadywanie też blokuje.
-  // 5. próba zakłada blokadę na 15 minut; po jej wygaśnięciu licznik zaczyna od nowa.
+/**
+ * Sprawdza hasło konta z licznikiem prób: próba liczona atomowo PRZED PBKDF2 (równoległe zgadywanie też
+ * blokuje), 5. próba zakłada blokadę na 15 minut, dobre hasło zeruje licznik. 429 przy blokadzie.
+ */
+export async function checkUserPassword(
+  env: Env,
+  user: UserRow,
+  password: string,
+  now = Date.now()
+): Promise<boolean> {
   const attempt = await env.DB.prepare(
     `UPDATE users
         SET failed_logins = (CASE WHEN locked_until IS NOT NULL THEN 0 ELSE failed_logins END) + 1,
@@ -288,7 +280,29 @@ export async function login(request: Request, env: Env): Promise<Response> {
   if (!attempt) {
     throw new HttpError(429, 'Za dużo prób. Spróbuj za kilkanaście minut albo ustaw nowe hasło.');
   }
-  if (!(await verifyPassword(password, user))) throw new HttpError(401, BAD_LOGIN);
+  if (!(await verifyPassword(password, user))) return false;
+  await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').bind(user.id).run();
+  return true;
+}
+
+export async function login(request: Request, env: Env): Promise<Response> {
+  const body = (await readJson(request)) as { email?: unknown; password?: unknown } | null;
+  const email = normalizeEmail(body?.email);
+  const password = typeof body?.password === 'string' ? body.password : '';
+  const now = Date.now();
+  const user = email
+    ? await env.DB.prepare(
+        `SELECT ${USER_COLUMNS} FROM users WHERE email = ?`
+      )
+        .bind(email)
+        .first<UserRow>()
+    : null;
+
+  if (!user) {
+    await hashPassword(password, DUMMY_SALT, PASSWORD_ITERATIONS);
+    throw new HttpError(401, BAD_LOGIN);
+  }
+  if (!(await checkUserPassword(env, user, password, now))) throw new HttpError(401, BAD_LOGIN);
 
   if (needsRehash(user.password_algo, user.password_iterations)) {
     const salt = randomBase64(16);
@@ -300,10 +314,6 @@ export async function login(request: Request, env: Env): Promise<Response> {
       .bind(hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, user.id)
       .run();
   }
-  // Dobre hasło zeruje licznik (także próbę policzoną wyżej)
-  await env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?')
-    .bind(user.id)
-    .run();
   const session = await createSession(env, user.id);
   // Wersja zgody z konta: aplikacja na nowym urządzeniu nie pyta o regulamin drugi raz
   return json({ session, user: { id: user.id, email: user.email, termsVersion: user.terms_version } });

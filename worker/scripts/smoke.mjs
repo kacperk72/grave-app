@@ -496,6 +496,57 @@ async function legalConsent() {
   check('cron: aktywna sesja została', sql(`SELECT COUNT(*) AS n FROM sessions WHERE user_id = '${uid}'`) >= 1);
 }
 
+/** Usunięcie konta: podgląd, złe hasło, skutki w mapach, anonimizacja, ponowna rejestracja. */
+async function accountDeletion() {
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+  const email = `usun-${Date.now()}@example.com`;
+  const d = await register(email, 'dobrehaslo1');
+  const me = await call('GET', '/account', { token: d });
+  const uid = me.data?.user?.id;
+
+  // F1: D zakłada, Ola dołącza → przekazanie roli; F2: Ewa zakłada, D dołącza z sesją → wyjście;
+  // F3: D sam (Ula dołączyła i wyszła) → usunięcie
+  const f1 = await call('POST', '/spaces', { body: { name: 'F1', member: { name: 'Kacper', color: 'clay' } } });
+  const ola = await call('POST', '/join', { token: f1.data.invite, body: { name: 'Ola', color: 'rose' } });
+  const f2 = await call('POST', '/spaces', { body: { name: 'F2', member: { name: 'Ewa', color: 'sky' } } });
+  const dInF2 = await call('POST', '/join', { token: f2.data.invite, headers: { 'X-Session': d }, body: { name: 'Kacper', color: 'clay' } });
+  const f3 = await call('POST', '/spaces', { body: { name: 'F3', member: { name: 'Kacper', color: 'clay' } } });
+  const ula = await call('POST', '/join', { token: f3.data.invite, body: { name: 'Ula', color: 'moss' } });
+  await call('POST', '/space/leave', { token: ula.data.memberToken });
+  const linked = await call('POST', '/account/link', { token: d, body: { tokens: [f1.data.memberToken, f3.data.memberToken] } });
+  const personal = linked.data.spaces.find((s) => s.kind === 'personal');
+  await call('POST', '/changes', { token: personal.memberToken, body: { changes: [{ id: 'g-usun-1', deleted: false, data: grave('g-usun-1') }] } });
+  await call('POST', '/changes', { token: f3.data.memberToken, body: { changes: [{ id: 'g-usun-3', deleted: false, data: grave('g-usun-3') }] } });
+  sqlRun(`INSERT INTO photo_objects (key, space_id, bytes, created_at) VALUES ('${personal.spaceId}/p1/full', '${personal.spaceId}', 10, 1), ('${personal.spaceId}/p1/thumb', '${personal.spaceId}', 5, 1)`);
+
+  const pv = await call('GET', '/account/deletion', { token: d });
+  const eff = Object.fromEntries((pv.data?.families ?? []).map((f) => [f.name, f]));
+  check('podgląd: Moje — 1 grób, 1 zdjęcie', pv.data?.personal?.graves === 1 && pv.data?.personal?.photos === 1, pv.data);
+  check('podgląd: F1 przekazanie roli Oli', eff.F1?.effect === 'transfer' && eff.F1?.heir === 'Ola', eff.F1);
+  check('podgląd: F2 wyjście', eff.F2?.effect === 'leave', eff.F2);
+  check('podgląd: F3 (tylko usunięci inni) usunięcie mapy', eff.F3?.effect === 'delete', eff.F3);
+
+  const bad = await call('POST', '/account/delete', { token: d, body: { password: 'zlehaslo00' } });
+  check('usunięcie ze złym hasłem: 401, konto zostaje', bad.status === 401 && sql(`SELECT COUNT(*) AS n FROM users WHERE id = '${uid}'`) === 1, bad);
+
+  const del = await call('POST', '/account/delete', { token: d, body: { password: 'dobrehaslo1' } });
+  check('usunięcie konta: 200', del.status === 200, del);
+  check('konto i sesje skasowane', sql(`SELECT COUNT(*) AS n FROM users WHERE id = '${uid}'`) === 0 && sql(`SELECT COUNT(*) AS n FROM sessions WHERE user_id = '${uid}'`) === 0);
+  check('sesja po usunięciu: 401', (await call('GET', '/account', { token: d })).status === 401);
+  const olaNow = await call('GET', '/space', { token: ola.data.memberToken });
+  check('F1: Ola jest założycielką', olaNow.data?.me?.role === 'owner', olaNow);
+  check('F1: stary klucz D nie działa', (await call('GET', '/space', { token: f1.data.memberToken })).status === 401);
+  const f2Members = await call('GET', '/members', { token: f2.data.memberToken });
+  check('F2: D zniknął z listy członków', f2Members.data?.members?.length === 1, f2Members.data);
+  check('F2: klucz D nie działa', (await call('GET', '/space', { token: dInF2.data.memberToken })).status === 401);
+  check('F3 i Moje usunięte z grobami', sql(`SELECT COUNT(*) AS n FROM spaces WHERE id IN ('${f3.data.spaceId}', '${personal.spaceId}')`) === 0 && sql(`SELECT COUNT(*) AS n FROM graves WHERE space_id IN ('${f3.data.spaceId}', '${personal.spaceId}')`) === 0);
+  check('zdjęcia Moje w kolejce kasowania', sql(`SELECT COUNT(*) AS n FROM photo_purge WHERE key LIKE '${personal.spaceId}/%'`) === 2);
+  check('członkowie zanonimizowani', sql(`SELECT COUNT(*) AS n FROM members WHERE user_id = '${uid}'`) === 0 && sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${dInF2.data.memberId}' AND name = 'Usunięte konto' AND removed_at IS NOT NULL`) === 1);
+
+  const again = await register(email, 'dobrehaslo1');
+  check('ten sam e-mail: nowe konto po usunięciu', typeof again === 'string');
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
@@ -507,6 +558,7 @@ await accounts();
 await accountLink();
 await hardening();
 await legalConsent();
+await accountDeletion();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');
