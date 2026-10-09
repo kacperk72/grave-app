@@ -269,7 +269,7 @@ async function memberTokens() {
 async function register(email, password) {
   const req = await call('POST', '/auth/request', { body: { email } });
   const ver = await call('POST', '/auth/verify', { body: { email, code: req.data?.dev?.code } });
-  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password } });
+  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password, acceptTerms: 1 } });
   return set.data?.session;
 }
 
@@ -293,7 +293,7 @@ async function accounts() {
 
   const short = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'krotkie' } });
   check('hasło krótsze niż 8 znaków: 400', short.status === 400, short);
-  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'dobrehaslo1' } });
+  const set = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'dobrehaslo1', acceptTerms: 1 } });
   check('ustawienie hasła: sesja', set.status === 200 && typeof set.data?.session === 'string' && set.data.user?.email === email, set);
   const reuseSetup = await call('POST', '/auth/password', { body: { setupToken: ver.data?.setupToken, password: 'innehaslo1' } });
   check('setupToken jednorazowy: 401', reuseSetup.status === 401, reuseSetup);
@@ -454,6 +454,48 @@ async function hardening() {
   sqlRun('UPDATE login_codes SET ip_hash = NULL');
 }
 
+/** Zgoda na regulamin: konto wymaga, reset nie; mapy zapisują wersję i datę; cron sprząta. */
+async function legalConsent() {
+  sqlRun('UPDATE login_codes SET ip_hash = NULL');
+  const email = `zgoda-${Date.now()}@example.com`;
+  const r1 = await call('POST', '/auth/request', { body: { email } });
+  const v1 = await call('POST', '/auth/verify', { body: { email, code: r1.data?.dev?.code } });
+  check('weryfikacja nowego adresu: exists=false', v1.status === 200 && v1.data?.exists === false, v1);
+  const noTerms = await call('POST', '/auth/password', { body: { setupToken: v1.data?.setupToken, password: 'dobrehaslo1' } });
+  check('nowe konto bez zgody: 400', noTerms.status === 400, noTerms);
+  const withTerms = await call('POST', '/auth/password', { body: { setupToken: v1.data?.setupToken, password: 'dobrehaslo1', acceptTerms: 1 } });
+  check('nowe konto ze zgodą: sesja', withTerms.status === 200 && typeof withTerms.data?.session === 'string', withTerms);
+  check('wersja regulaminu zapisana przy koncie', sql(`SELECT terms_version AS n FROM users WHERE email = '${email}'`) === 1);
+
+  const r2 = await call('POST', '/auth/request', { body: { email } });
+  const v2 = await call('POST', '/auth/verify', { body: { email, code: r2.data?.dev?.code } });
+  check('weryfikacja istniejącego konta: exists=true', v2.data?.exists === true, v2);
+  const reset = await call('POST', '/auth/password', { body: { setupToken: v2.data?.setupToken, password: 'nowehaslo22' } });
+  check('nowe hasło istniejącego konta bez zgody: OK', reset.status === 200 && reset.data?.user?.termsVersion === 1, reset);
+  check('zgoda konta: data i godzina zapisane', sql(`SELECT COUNT(*) AS n FROM users WHERE email = '${email}' AND terms_accepted_at > 0`) === 1);
+  const logged = await call('POST', '/auth/login', { body: { email, password: 'nowehaslo22' } });
+  check('logowanie zwraca wersję zgody konta (nowe urządzenie bez ponownej zgody)', logged.data?.user?.termsVersion === 1, logged);
+
+  const fam = await call('POST', '/spaces', { body: { name: 'Zgoda', member: { name: 'Ala', color: 'sky' }, acceptTerms: 1 } });
+  check('założyciel mapy: wersja zgody zapisana', sql(`SELECT terms_version AS n FROM members WHERE id = '${fam.data.memberId}'`) === 1);
+  const j = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Ola', color: 'rose', acceptTerms: 1 } });
+  check('dołączający: wersja zgody zapisana', sql(`SELECT terms_version AS n FROM members WHERE id = '${j.data.memberId}'`) === 1);
+  check('dołączający: data i godzina zgody zapisane', sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${j.data.memberId}' AND terms_accepted_at > 0`) === 1);
+  const old = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Stara', color: 'sage' } });
+  check('dołączenie bez pola zgody (stara aplikacja) dalej działa', old.status === 201, old);
+  check('bez zgody: brak daty zgody', sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${old.data.memberId}' AND terms_accepted_at IS NULL`) === 1);
+
+  // Cron: kody starsze niż 24 h i wygasłe sesje znikają
+  const uid = sql(`SELECT id AS n FROM users WHERE email = '${email}'`);
+  sqlRun(`INSERT INTO login_codes (id, email, code_hash, link_hash, created_at, expires_at) VALUES ('stary-kod', 'x@example.com', 'h', 'stary-link', 1, 2)`);
+  sqlRun(`INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at) VALUES ('stara-sesja', '${uid}', 1, 1, 2)`);
+  let cron = null;
+  for (let i = 0; i < 5 && !cron; i++) cron = await fetch(`${API}/__scheduled?cron=17+3+*+*+*`).catch(() => null);
+  check('cron: stary kod usunięty', sql("SELECT COUNT(*) AS n FROM login_codes WHERE id = 'stary-kod'") === 0);
+  check('cron: wygasła sesja usunięta', sql("SELECT COUNT(*) AS n FROM sessions WHERE token_hash = 'stara-sesja'") === 0);
+  check('cron: aktywna sesja została', sql(`SELECT COUNT(*) AS n FROM sessions WHERE user_id = '${uid}'`) >= 1);
+}
+
 const legacyToken = await legacy();
 const session = await members();
 await legacyOwner(legacyToken);
@@ -464,6 +506,7 @@ await memberTokens();
 await accounts();
 await accountLink();
 await hardening();
+await legalConsent();
 await purge();
 
 console.log(failed ? `\n${failed} FAIL` : '\nwszystko ok');

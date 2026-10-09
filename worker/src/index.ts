@@ -23,6 +23,7 @@
  */
 
 import { HttpError, corsHeaders, json, readJson } from './http';
+import { cleanupAuth } from './cleanup';
 import { currentDay } from './util';
 import { Session, Space, authenticate, spaceFromInvite } from './auth';
 import {
@@ -103,6 +104,7 @@ export default {
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     await purgePhotos(env);
+    await cleanupAuth(env);
   },
 } satisfies ExportedHandler<Env>;
 
