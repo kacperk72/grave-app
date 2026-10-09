@@ -42,7 +42,9 @@ export class App {
       p.startsWith('/graves/') ||
       p.startsWith('/rodzina') ||
       p.startsWith('/mapy/') ||
-      p.startsWith('/logowanie')
+      p.startsWith('/logowanie') ||
+      p.startsWith('/regulamin') ||
+      p.startsWith('/prywatnosc')
     );
   });
 
