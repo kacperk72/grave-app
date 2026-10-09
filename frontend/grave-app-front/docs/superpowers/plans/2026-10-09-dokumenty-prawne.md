@@ -39,7 +39,7 @@
 - Modify: `worker/src/accounts.ts` (`verifyCode`, `setPassword`), `worker/src/members.ts` (`NewMember`, `insertMember`, `createSpace`, `joinSpace`), `worker/src/index.ts` (`scheduled`), `worker/scripts/smoke.mjs`
 
 **Interfaces:**
-- Produces: `TERMS_VERSION: number` (= 1), `parseTermsVersion(value: unknown): number | null`; `POST /auth/verify` → `{ setupToken, email, exists: boolean }`; `POST /auth/password` wymaga `acceptTerms: 1` dla nowego konta; `POST /spaces` i `POST /join` przyjmują opcjonalne `acceptTerms`; `cleanupAuth(env: Env): Promise<void>`.
+- Produces: `TERMS_VERSION: number` (= 1), `parseTermsVersion(value: unknown): number | null`; `POST /auth/verify` → `{ setupToken, email, exists: boolean }`; `POST /auth/login` i `POST /auth/password` → `user: { id, email, termsVersion: number | null }`; `POST /auth/password` wymaga `acceptTerms: 1` dla nowego konta; `POST /spaces` i `POST /join` przyjmują opcjonalne `acceptTerms`; `cleanupAuth(env: Env): Promise<void>`.
 
 - [ ] **Step 1: Test dymny (czerwony)** — w `smoke.mjs` zmień helper `register` i wywołanie `set` w `accounts()`, potem dodaj sekcję `legalConsent()` przed `const legacyToken = await legacy();` i wywołaj ją po `await hardening();`:
 
@@ -73,14 +73,19 @@ async function legalConsent() {
   const v2 = await call('POST', '/auth/verify', { body: { email, code: r2.data?.dev?.code } });
   check('weryfikacja istniejącego konta: exists=true', v2.data?.exists === true, v2);
   const reset = await call('POST', '/auth/password', { body: { setupToken: v2.data?.setupToken, password: 'nowehaslo22' } });
-  check('nowe hasło istniejącego konta bez zgody: OK', reset.status === 200, reset);
+  check('nowe hasło istniejącego konta bez zgody: OK', reset.status === 200 && reset.data?.user?.termsVersion === 1, reset);
+  check('zgoda konta: data i godzina zapisane', sql(`SELECT COUNT(*) AS n FROM users WHERE email = '${email}' AND terms_accepted_at > 0`) === 1);
+  const logged = await call('POST', '/auth/login', { body: { email, password: 'nowehaslo22' } });
+  check('logowanie zwraca wersję zgody konta (nowe urządzenie bez ponownej zgody)', logged.data?.user?.termsVersion === 1, logged);
 
   const fam = await call('POST', '/spaces', { body: { name: 'Zgoda', member: { name: 'Ala', color: 'sky' }, acceptTerms: 1 } });
   check('założyciel mapy: wersja zgody zapisana', sql(`SELECT terms_version AS n FROM members WHERE id = '${fam.data.memberId}'`) === 1);
   const j = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Ola', color: 'rose', acceptTerms: 1 } });
   check('dołączający: wersja zgody zapisana', sql(`SELECT terms_version AS n FROM members WHERE id = '${j.data.memberId}'`) === 1);
+  check('dołączający: data i godzina zgody zapisane', sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${j.data.memberId}' AND terms_accepted_at > 0`) === 1);
   const old = await call('POST', '/join', { token: fam.data.invite, body: { name: 'Stara', color: 'sage' } });
   check('dołączenie bez pola zgody (stara aplikacja) dalej działa', old.status === 201, old);
+  check('bez zgody: brak daty zgody', sql(`SELECT COUNT(*) AS n FROM members WHERE id = '${old.data.memberId}' AND terms_accepted_at IS NULL`) === 1);
 
   // Cron: kody starsze niż 24 h i wygasłe sesje znikają
   const uid = sql(`SELECT id AS n FROM users WHERE email = '${email}'`);
@@ -103,10 +108,11 @@ Expected: FAIL na `exists=false`, `bez zgody: 400`, `wersja regulaminu zapisana�
 
 `worker/migrations/0007_legal.sql`:
 ```sql
--- Zgoda na regulamin: wersja i data przy koncie, wersja przy członku mapy. Migracja tylko dodaje kolumny.
+-- Zgoda na regulamin: wersja oraz data i godzina — przy koncie i przy członku mapy. Migracja tylko dodaje kolumny.
 ALTER TABLE users ADD COLUMN terms_version INTEGER;
 ALTER TABLE users ADD COLUMN terms_accepted_at INTEGER;
 ALTER TABLE members ADD COLUMN terms_version INTEGER;
+ALTER TABLE members ADD COLUMN terms_accepted_at INTEGER;
 ```
 
 `worker/src/legal.ts`:
@@ -132,7 +138,7 @@ export function parseTermsVersion(value: unknown): number | null {
 - [ ] **Step 5: `setPassword` wymaga zgody przy zakładaniu** — w `accounts.ts`:
   - import: `import { TERMS_VERSION, parseTermsVersion } from './legal';`
   - typ ciała: `{ setupToken?: unknown; password?: unknown; acceptTerms?: unknown }`
-  - przenieś zapytanie `existing` (SELECT id FROM users WHERE email = ?) **przed** `hashPassword` i dodaj zaraz po nim:
+  - przenieś zapytanie `existing` **przed** `hashPassword`, rozszerzone o zgodę: `SELECT id, terms_version FROM users WHERE email = ?` (`.first<{ id: string; terms_version: number | null }>()`), i dodaj zaraz po nim:
 ```ts
   const terms = parseTermsVersion(body?.acceptTerms);
   if (!existing && terms !== TERMS_VERSION) {
@@ -147,11 +153,14 @@ export function parseTermsVersion(value: unknown): number | null {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(userId, code.email, hash, salt, PASSWORD_ALGO, PASSWORD_ITERATIONS, now, now, TERMS_VERSION, now),
 ```
+  - odpowiedź: `return json({ session, user: { id: userId, email: code.email, termsVersion: existing ? existing.terms_version : TERMS_VERSION } });`
+
+- [ ] **Step 5b: Logowanie zwraca wersję zgody** — w `login`: do SELECT użytkownika dopisz `terms_version`, do typu `UserRow` pole `terms_version: number | null`, odpowiedź `json({ session, user: { id: user.id, email: user.email, termsVersion: user.terms_version } })`. (Aplikacja oznacza wtedy zgodę na nowym urządzeniu — Task 6.)
 
 - [ ] **Step 6: Mapy zapisują wersję zgody** — w `members.ts`:
   - `import { parseTermsVersion } from './legal';`
   - `NewMember` dostaje `termsVersion?: number | null;`
-  - `insertMember`: kolumna `terms_version` w INSERT (`... user_id, terms_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` i `.bind(..., m.userId ?? null, m.termsVersion ?? null)`).
+  - `insertMember`: kolumny `terms_version, terms_accepted_at` w INSERT (`... user_id, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` i `.bind(..., m.userId ?? null, m.termsVersion ?? null, m.termsVersion ? now : null)`).
   - `createSpace`: typ ciała `acceptTerms?: unknown`; w `insertMember(env, {...})` dodaj `termsVersion: parseTermsVersion(body.acceptTerms)`.
   - `joinSpace`: typ ciała `{ name?: unknown; color?: unknown; acceptTerms?: unknown }`; w obiekcie `member` dodaj `termsVersion: parseTermsVersion(body?.acceptTerms)`.
 
@@ -285,7 +294,7 @@ export async function checkUserPassword(env: Env, user: UserRow, password: strin
   return true;
 }
 ```
-W `login`: zastąp blok od `const attempt = …` do `if (!(await verifyPassword…)) throw …` wywołaniem `if (!(await checkUserPassword(env, user, password, now))) throw new HttpError(401, BAD_LOGIN);` i usuń końcowe zerowanie licznika (robi to `checkUserPassword`). `type UserRow` → `export type UserRow`. Dodaj `export const USER_COLUMNS = 'id, email, password_hash, password_salt, password_algo, password_iterations, failed_logins, locked_until';` i użyj go w SELECT w `login`.
+W `login`: zastąp blok od `const attempt = …` do `if (!(await verifyPassword…)) throw …` wywołaniem `if (!(await checkUserPassword(env, user, password, now))) throw new HttpError(401, BAD_LOGIN);` i usuń końcowe zerowanie licznika (robi to `checkUserPassword`). `type UserRow` → `export type UserRow`. Dodaj `export const USER_COLUMNS = 'id, email, password_hash, password_salt, password_algo, password_iterations, failed_logins, locked_until, terms_version';` i użyj go w SELECT w `login`.
 
 - [ ] **Step 4: `LEGACY_ACTIVITY_MS`** — w `members.ts` zmień `const LEGACY_ACTIVITY_MS` na `export const LEGACY_ACTIVITY_MS`.
 
@@ -768,7 +777,7 @@ import { CONTACT_EMAIL } from '../../shared/legal';
 
       <h2>2. Jakie dane i kiedy</h2>
       <p><strong>Aplikacja bez konta i bez mapy rodzinnej.</strong> Groby, zdjęcia i ustawienia zostają w pamięci Twojego urządzenia — nie wysyłamy ich na serwer. Przy wejściu na stronę i wyświetlaniu mapy Twój adres IP widzą technicznie serwer strony i dostawcy kafelków mapy (punkt 4).</p>
-      <p><strong>Mapa rodzinna.</strong> Na serwerze zapisujemy: Twój podpis w mapie (imię i kolor), groby mapy (lokalizacja GPS, cmentarz, dane osób pochowanych, opisy, terminy opłat), zdjęcia, informację, kto ostatnio zmieniał grób, oraz wersję zaakceptowanego regulaminu.</p>
+      <p><strong>Mapa rodzinna.</strong> Na serwerze zapisujemy: Twój podpis w mapie (imię i kolor), groby mapy (lokalizacja GPS, cmentarz, dane osób pochowanych, opisy, terminy opłat), zdjęcia, informację, kto ostatnio zmieniał grób, oraz wersję, datę i godzinę zaakceptowania regulaminu.</p>
       <p><strong>Konto.</strong> Dodatkowo: adres e-mail, hasło w postaci skrótu (nie znamy Twojego hasła), sesje zalogowanych urządzeń, skrót adresu IP przy prośbie o kod z maila (ochrona przed nadużyciami) oraz datę i wersję zaakceptowanego regulaminu.</p>
       <p>Dane osób zmarłych nie są danymi osobowymi w rozumieniu RODO, ale opisy i zdjęcia mogą dotyczyć żyjących osób — dodawaj je z rozwagą.</p>
 
@@ -793,8 +802,8 @@ import { CONTACT_EMAIL } from '../../shared/legal';
       <h2>5. Jak długo przechowujemy dane</h2>
       <table>
         <tr><th>Dane</th><th>Okres</th></tr>
-        <tr><td>konto, e-mail, skrót hasła, zgoda</td><td>do usunięcia konta</td></tr>
-        <tr><td>sesje urządzeń</td><td>do wylogowania, najdłużej 365 dni</td></tr>
+        <tr><td>konto, e-mail, skrót hasła, wersja oraz data i godzina zgody</td><td>do usunięcia konta</td></tr>
+        <tr><td>sesje urządzeń</td><td>do wylogowania albo 365 dni bez korzystania z aplikacji</td></tr>
         <tr><td>kody z maila i skrót adresu IP</td><td>24 godziny</td></tr>
         <tr><td>dane w mapie rodzinnej</td><td>do usunięcia grobu, mapy albo konta; po usunięciu konta Twój podpis w mapach zastępujemy napisem „Usunięte konto”</td></tr>
         <tr><td>zdjęcia usuniętych map</td><td>do 3 dni po usunięciu</td></tr>
@@ -923,7 +932,7 @@ git commit -m "feat: dokumenty w Ustawieniach, na powitaniu i przy logowaniu"
 
 **Interfaces:**
 - Consumes: `TERMS_VERSION`, `acceptedTermsVersion`, `needsTermsAcceptance`, `markTermsAccepted`, `TermsCheckboxComponent` (Task 3); `exists` i `acceptTerms` z API (Task 1).
-- Produces: `FamilyApi.authVerify(...)` → `{ setupToken, email, exists }`; `FamilyApi.authPassword(setupToken, password, acceptTerms?: number)`; `AccountService.verify(...)` → `{ setupToken, email, exists }`; `AccountService.setPassword(setupToken, password, acceptTerms?: number)`; `ProfileFormComponent.requireTerms` (input, domyślnie `false`).
+- Produces: `AuthResult.user.termsVersion?: number | null`; `FamilyApi.authVerify(...)` → `{ setupToken, email, exists }`; `FamilyApi.authPassword(setupToken, password, acceptTerms?: number)`; `AccountService.verify(...)` → `{ setupToken, email, exists }`; `AccountService.setPassword(setupToken, password, acceptTerms?: number)`; `ProfileFormComponent.requireTerms` (input, domyślnie `false`).
 
 - [ ] **Step 1: Klient API**
   - `authVerify` — typ wyniku `Promise<{ setupToken: string; email: string; exists: boolean }>`.
@@ -938,7 +947,11 @@ function termsField(): { acceptTerms?: number } {
 ```
   (import `acceptedTermsVersion` z `../../shared/legal`).
 
-- [ ] **Step 2: AccountService** — sygnatury `verify(...)` → `Promise<{ setupToken: string; email: string; exists: boolean }>` i:
+- [ ] **Step 2: AccountService** — w `family-api.ts` typ `AuthResult.user` dostaje `termsVersion?: number | null`. Zgoda zapisana na koncie oznacza zgodę na każdym urządzeniu, na którym się zalogujesz — w `login()` i `setPassword()` po odpowiedzi serwera:
+```ts
+    if ((res.user.termsVersion ?? 0) >= TERMS_VERSION) markTermsAccepted();
+```
+(import `TERMS_VERSION`, `markTermsAccepted` z `../../shared/legal`). Sygnatury `verify(...)` → `Promise<{ setupToken: string; email: string; exists: boolean }>` i:
 ```ts
   async setPassword(setupToken: string, password: string, acceptTerms?: number): Promise<{ movedGraves: number }> {
     const res = await this.api.authPassword(setupToken, password, acceptTerms);
@@ -987,6 +1000,7 @@ Expected: PASS.
 - [ ] **Step 7: E2E (lokalnie, izolowane konteksty)**
   1. `/logowanie` → „Nie mam konta — załóż” → kod z odpowiedzi `POST /auth/request` (`dev.code`) → krok hasła: checkbox widoczny, „Zapisz hasło” nieaktywny; zaznaczenie → aktywny → „Gotowe”; `localStorage['znajdzgroby-terms'] === '1'`.
   2. Ten sam e-mail w nowym kontekście: „Nie pamiętam hasła” → link z `dev.link` → krok „Nowe hasło” bez checkboxa → „Gotowe”.
+  2b. Kolejny nowy kontekst: logowanie tym kontem (hasłem) → `localStorage['znajdzgroby-terms'] === '1'` → `/rodzina#<invite>` bez checkboxa.
   3. Nowy kontekst: `/mapy/nowa` → checkbox widoczny, „Utwórz mapę” nieaktywne do zaznaczenia; po utworzeniu `/rodzina#<invite>` w **tym samym** kontekście (drugie dołączenie) — checkbox ukryty.
   4. Kontekst bez zgody: `/rodzina#<invite>` → wpisane imię, klik w „Regulamin” z checkboxa otwiera nową kartę `/regulamin`; w pierwotnej karcie imię zostaje wpisane (Review Focus 5).
 Expected: wszystkie kroki zgodne.
