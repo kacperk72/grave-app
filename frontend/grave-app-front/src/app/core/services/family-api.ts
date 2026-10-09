@@ -6,6 +6,7 @@ import { Member, Profile, SpaceRole } from '../../shared/models/space.model';
 import { RemoteChange } from './indexeddb.service';
 import { LinkedSpace } from '../../shared/utils/account-link';
 import { acceptedTermsVersion } from '../../shared/legal';
+import { DeletionPreview } from '../../shared/utils/account-rules';
 
 export class ApiError extends Error {
   constructor(
@@ -154,6 +155,14 @@ export class FamilyApi {
   async accountLink(session: string, tokens: string[]): Promise<LinkedSpace[]> {
     return (await this.request<{ spaces: LinkedSpace[] }>('POST', '/account/link', session, { tokens }))
       .spaces;
+  }
+
+  accountDeletionPreview(session: string): Promise<DeletionPreview> {
+    return this.request('GET', '/account/deletion', session);
+  }
+
+  deleteAccount(session: string, password: string): Promise<unknown> {
+    return this.request('POST', '/account/delete', session, { password });
   }
 
   spaceInfo(token: string): Promise<{ spaceId: string; name: string; graves: number }> {

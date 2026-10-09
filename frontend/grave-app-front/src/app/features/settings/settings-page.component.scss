@@ -274,3 +274,18 @@
   font-size: 12px;
   color: var(--ink-faint);
 }
+
+.row__icon--danger {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.row__title--danger {
+  color: var(--danger);
+}
+
+.notice {
+  margin: 8px 4px 0;
+  font-size: 14px;
+  color: var(--ok);
+}
