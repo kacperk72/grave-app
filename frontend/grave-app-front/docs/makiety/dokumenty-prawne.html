@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Makieta — dokumenty i usuwanie konta</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" />
+<style>
+  :root {
+    --stone: #f3f2ef; --stone-2: #e7e5df; --card: #fff; --pill: #f0eeea;
+    --ink: #171715; --ink-muted: #5e5c57; --ink-faint: #8c887f; --on-ink: #fff;
+    --danger: #b3261e; --danger-tint: #f9e3e1; --hairline: #e3e1db; --divider: #efede8;
+    --sky-bg: #d9e6f2; --sky-ink: #2b4f73; --rose-bg: #f2dadd; --rose-ink: #7c2f3a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px 48px; background: #dcdad4; font-family: 'Onest', system-ui, sans-serif; color: var(--ink); }
+  header.page { max-width: 1200px; margin: 0 auto 24px; }
+  header.page h1 { margin: 0 0 6px; font-size: 24px; }
+  header.page p { margin: 0; color: var(--ink-muted); line-height: 1.5; max-width: 760px; }
+  .grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 28px; }
+  figure { margin: 0; }
+  figcaption { font-size: 13px; font-weight: 600; color: var(--ink-muted); margin: 0 0 10px 6px; }
+  figcaption b { color: var(--ink); }
+  .phone { width: 100%; max-width: 360px; height: 720px; border-radius: 40px; background: var(--stone); border: 8px solid #1d1d1b; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+  .scr { flex: 1; overflow-y: auto; padding: 22px 18px 110px; display: flex; flex-direction: column; gap: 14px; }
+  h2.t { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
+  .muted { color: var(--ink-muted); }
+  .lead { margin: 0; color: var(--ink-muted); line-height: 1.45; font-size: 15px; }
+  .group h3 { margin: 4px 4px 8px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+  .card { background: var(--card); border-radius: 22px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--divider); text-decoration: none; color: inherit; cursor: pointer; background: none; border-left: 0; border-right: 0; border-bottom: 0; width: 100%; font: inherit; text-align: left; }
+  .row:first-child { border-top: none; }
+  .ic { width: 40px; height: 40px; border-radius: 14px; background: var(--stone); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .ic.dark { background: var(--ink); color: var(--on-ink); }
+  .ic.red { background: var(--danger-tint); color: var(--danger); }
+  .rt { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .rt b { font-size: 15px; font-weight: 600; }
+  .rt span { font-size: 13px; color: var(--ink-muted); line-height: 1.35; }
+  .rt.red b { color: var(--danger); }
+  .chev { color: var(--ink-faint); }
+  .version { text-align: center; font-size: 12px; color: var(--ink-faint); margin: 2px 0 0; }
+  .nav { position: absolute; left: 14px; right: 14px; bottom: 14px; height: 62px; border-radius: 999px; background: var(--ink); display: flex; align-items: center; justify-content: space-around; color: #c9c6bf; }
+  .nav .on { background: #3a3936; color: #fff; border-radius: 999px; padding: 10px 14px; font-size: 14px; font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .cta { height: 56px; border: none; border-radius: 999px; background: var(--ink); color: var(--on-ink); font: inherit; font-size: 16px; font-weight: 600; padding: 0 22px; cursor: pointer; width: 100%; }
+  .cta:disabled { background: var(--stone-2); color: var(--ink-faint); cursor: not-allowed; }
+  .cta.red { background: var(--danger); }
+  .ghost { height: 48px; border: none; border-radius: 999px; background: var(--pill); font: inherit; font-weight: 600; cursor: pointer; width: 100%; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+  .field input { height: 48px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 16px; background: var(--card); font: inherit; font-size: 16px; font-weight: 400; color: var(--ink); }
+  .terms { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 16px; background: var(--card); font-size: 14px; line-height: 1.45; cursor: pointer; }
+  .terms input { width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0; }
+  .terms a, .links a, .doc a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+  .back { width: 40px; height: 40px; border-radius: 999px; background: var(--card); display: inline-flex; align-items: center; justify-content: center; }
+  .links { font-size: 12px; color: var(--ink-faint); text-align: center; line-height: 1.6; }
+  .links a { color: var(--ink-muted); }
+  .note-new { position: absolute; right: 12px; top: 12px; background: #c06a1e; color: #fff; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+  .new { outline: 2px dashed #c06a1e; outline-offset: 3px; border-radius: 18px; }
+  /* okno usuwania */
+  .overlay { position: absolute; inset: 0; background: rgba(23,23,21,.45); display: flex; align-items: flex-end; }
+  .overlay[hidden], .err[hidden] { display: none; }
+  .sheet { background: var(--stone); width: 100%; border-radius: 28px 28px 0 0; padding: 20px 18px 22px; display: flex; flex-direction: column; gap: 12px; max-height: 92%; overflow-y: auto; }
+  .sheet h4 { margin: 0; font-size: 22px; }
+  .eff { background: var(--card); border-radius: 18px; padding: 4px 14px; }
+  .eff div { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--divider); font-size: 14px; line-height: 1.4; }
+  .eff div:first-child { border-top: none; }
+  .eff i { font-style: normal; width: 22px; text-align: center; flex-shrink: 0; }
+  .err { color: var(--danger); font-size: 14px; margin: 0; }
+  .doc h3 { margin: 18px 0 6px; font-size: 17px; }
+  .doc p, .doc li { font-size: 14px; line-height: 1.55; color: #33322f; margin: 0 0 8px; }
+  .doc ol { padding-left: 20px; margin: 0; }
+  .ver { display: inline-block; background: var(--pill); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--ink-muted); font-weight: 600; }
+  .who { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-muted); }
+  .av { width: 30px; height: 30px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-left: -8px; border: 2px solid var(--stone); }
+  .av:first-child { margin-left: 0; }
+  .swatches { display: flex; gap: 10px; }
+  .swatches span { width: 34px; height: 34px; border-radius: 999px; }
+  .legend { max-width: 1200px; margin: 0 auto 18px; display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-muted); }
+  .legend span { display: inline-block; width: 26px; height: 16px; outline: 2px dashed #c06a1e; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>Makieta: regulamin, prywatność, zgoda i usuwanie konta</h1>
+  <p>Sześć ekranów znajdzgroby.pl po zmianie. Klikalne: checkboxy włączają przyciski, „Usuń konto” w Ustawieniach otwiera okno. Treść dokumentów to tylko początek — pełny tekst powstanie przy implementacji.</p>
+</header>
+<div class="legend"><span></span> nowy element</div>
+
+<div class="grid">
+
+  <!-- 1. Ustawienia -->
+  <figure>
+    <figcaption><b>1. Ustawienia</b> — „Usuń konto” i sekcja „Informacje”</figcaption>
+    <div class="phone" id="settings">
+      <div class="scr">
+        <h2 class="t">Ustawienia</h2>
+        <div class="group">
+          <h3>Konto</h3>
+          <div class="card">
+            <div class="row"><span class="ic dark">👤</span><span class="rt"><b>anna@example.com</b><span>Groby i zdjęcia są na koncie — zaloguj się na innym urządzeniu, żeby je zobaczyć</span></span></div>
+            <button class="row"><span class="ic">↪</span><span class="rt"><b>Wyloguj</b><span>Dane konta znikną z tej przeglądarki, zostają na koncie</span></span></button>
+            <button class="row new" onclick="openDelete()"><span class="ic red">🗑</span><span class="rt red"><b>Usuń konto</b><span>Usuwa konto, „Moje” i Twoje miejsce w mapach rodzinnych</span></span><span class="chev">›</span></button>
+          </div>
+        </div>
+        <div class="group">
+          <h3>Rodzinne mapy</h3>
+          <div class="card">
+            <div class="row"><span class="ic dark">👥</span><span class="rt"><b>Rodzinna Kubit</b><span>Zsynchronizowano przed chwilą</span></span><span class="chev">›</span></div>
+          </div>
+        </div>
+        <div class="group new">
+          <h3>Informacje</h3>
+          <div class="card">
+            <a class="row" href="#regulamin"><span class="ic">§</span><span class="rt"><b>Regulamin</b><span>Wersja 1 z 15.10.2026</span></span><span class="chev">›</span></a>
+            <a class="row" href="#regulamin"><span class="ic">🔒</span><span class="rt"><b>Polityka prywatności</b><span>Jakie dane zbieramy i dlaczego</span></span><span class="chev">›</span></a>
+            <a class="row" href="mailto:kontakt@znajdzgroby.pl"><span class="ic">✉</span><span class="rt"><b>Kontakt</b><span>kontakt@znajdzgroby.pl</span></span></a>
+          </div>
+        </div>
+        <p class="version">znajdzgroby.pl · wersja 5ef4491</p>
+      </div>
+      <div class="nav"><span>⌂</span><span>◫</span><span>⇄</span><span class="on">⚙ Ustawienia</span></div>
+
+      <div class="overlay" id="del" hidden>
+        <div class="sheet">
+          <h4>Usunąć konto?</h4>
+          <p class="lead">Tego nie da się cofnąć. Co się stanie:</p>
+          <div class="eff">
+            <div><i>🗑</i><span><b>Moje</b> — 12 grobów i 30 zdjęć zostanie usuniętych</span></div>
+            <div><i>👑</i><span><b>Rodzinna Kubit</b> — wychodzisz, rola założyciela przejdzie na <b>Weronika</b>. Twoje groby zostają dla rodziny.</span></div>
+            <div><i>↪</i><span><b>Rodzinna Kępa</b> — wychodzisz. Twoje groby zostają dla rodziny.</span></div>
+          </div>
+          <label class="field">Hasło<input type="password" id="pw" placeholder="Wpisz hasło, żeby potwierdzić" oninput="document.getElementById('delBtn').disabled = !this.value" /></label>
+          <p class="err" id="pwErr" hidden>Hasło jest nieprawidłowe</p>
+          <button class="cta red" id="delBtn" disabled onclick="document.getElementById('pwErr').hidden=false">Usuń konto na zawsze</button>
+          <button class="ghost" onclick="closeDelete()">Anuluj</button>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 2. Załóż konto: hasło -->
+  <figure>
+    <figcaption><b>2. Załóż konto</b> — krok „Ustaw hasło” z checkboxem</figcaption>
+    <div class="phone">
+      <div class="scr">
+        <span class="back">←</span>
+        <h2 class="t">Ustaw hasło</h2>
+        <p class="lead">Konto: anna@example.com</p>
+        <label class="field">Hasło (min. 8 znaków)<input type="password" value="dobrehaslo" /></label>
+        <label class="terms new"><input type="checkbox" onchange="document.getElementById('saveBtn').disabled = !this.checked" /><span>Akceptuję <a href="#regulamin">Regulamin</a> i zapoznałem/am się z <a href="#regulamin">Polityką prywatności</a></span></label>
+        <button class="cta" id="saveBtn" disabled>Zapisz hasło</button>
+        <p class="links">Tryb „Nie pamiętam hasła” — bez checkboxa (konto już istnieje).</p>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 3. Dołącz do mapy -->
+  <figure>
+    <figcaption><b>3. Dołącz do mapy</b> — checkbox nad „Dołącz” (także „Utwórz mapę”)</figcaption>
+    <div class="phone">
+      <div class="scr">
+        <h2 class="t">Dołącz do mapy „Rodzinna Kubit”</h2>
+        <div class="who"><span class="av" style="background:var(--rose-bg);color:var(--rose-ink)">W</span><span class="av" style="background:var(--sky-bg);color:var(--sky-ink)">K</span><span>2 osoby · 56 grobów</span></div>
+        <label class="field">Jak cię podpisać w rodzinie?<input value="Kamila" /></label>
+        <div class="swatches"><span style="background:#dfe7dc"></span><span style="background:#f0dccf;outline:2px solid #171715;outline-offset:2px"></span><span style="background:#d9e6f2"></span><span style="background:#e7dbe8"></span><span style="background:#efe6cf"></span></div>
+        <label class="terms new"><input type="checkbox" onchange="document.getElementById('joinBtn').disabled = !this.checked" /><span>Akceptuję <a href="#regulamin">Regulamin</a> i zapoznałem/am się z <a href="#regulamin">Polityką prywatności</a></span></label>
+        <button class="cta" id="joinBtn" disabled>Dołącz →</button>
+        <p class="links">Kto już zaakceptował tę wersję na tym telefonie, nie widzi checkboxa.</p>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 4. Logowanie -->
+  <figure>
+    <figcaption><b>4. Logowanie</b> — linki do dokumentów pod formularzem</figcaption>
+    <div class="phone">
+      <div class="scr">
+        <span class="back">←</span>
+        <h2 class="t">Zaloguj się</h2>
+        <p class="lead">Twoje groby i zdjęcia będą na każdym urządzeniu, na którym się zalogujesz.</p>
+        <label class="field">E-mail<input value="anna@example.com" /></label>
+        <label class="field">Hasło<input type="password" value="••••••••••" /></label>
+        <button class="cta">Zaloguj</button>
+        <span class="muted" style="font-size:14px;text-decoration:underline">Nie pamiętam hasła</span>
+        <span class="muted" style="font-size:14px;text-decoration:underline">Nie mam konta — załóż</span>
+        <p class="links new" style="margin-top:auto"><a href="#regulamin">Regulamin</a> · <a href="#regulamin">Polityka prywatności</a> · kontakt@znajdzgroby.pl</p>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 5. Powitanie -->
+  <figure>
+    <figcaption><b>5. Powitanie</b> — linijka linków pod przyciskami</figcaption>
+    <div class="phone" style="background:#2b2a27;color:#fff">
+      <div class="scr" style="justify-content:flex-end">
+        <h2 class="t" style="font-size:34px">Groby bliskich zawsze pod ręką</h2>
+        <p class="lead" style="color:#c9c6bf">Zapisz miejsce, zdjęcie i termin opłaty — działa także bez internetu.</p>
+        <button class="cta" style="background:#fff;color:#171715">Zaczynamy →</button>
+        <span style="text-align:center;text-decoration:underline;font-size:14px;color:#e7e5df">Mam już konto — zaloguj się</span>
+        <p class="links new" style="color:#8c887f"><a href="#regulamin" style="color:#c9c6bf">Regulamin</a> · <a href="#regulamin" style="color:#c9c6bf">Polityka prywatności</a></p>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 6. Regulamin -->
+  <figure id="regulamin">
+    <figcaption><b>6. Strona dokumentu</b> — <code>/regulamin</code> (tak samo <code>/prywatnosc</code>)</figcaption>
+    <div class="phone">
+      <div class="scr doc">
+        <span class="back">←</span>
+        <h2 class="t">Regulamin</h2>
+        <span class="ver">Wersja 1 · obowiązuje od 15.10.2026</span>
+        <p class="lead">znajdzgroby.pl jest bezpłatna — bez opłat, subskrypcji i reklam.</p>
+        <h3>1. Kto świadczy usługę</h3>
+        <p>Usługę świadczy Kacper Kubit. Kontakt: <a href="mailto:kontakt@znajdzgroby.pl">kontakt@znajdzgroby.pl</a>.</p>
+        <h3>2. Co oferujemy</h3>
+        <ol>
+          <li>Zapisywanie grobów w telefonie — bez konta.</li>
+          <li>Mapy rodzinne — wspólne groby dla osób z linkiem zaproszenia.</li>
+          <li>Konto — te same groby na wielu urządzeniach.</li>
+        </ol>
+        <h3>3. Wymagania techniczne</h3>
+        <p>Aktualna przeglądarka (Chrome, Safari, Firefox, Edge). Do map rodzinnych i konta — internet; do konta — adres e-mail.</p>
+        <h3>4. Konto</h3>
+        <p>Konto może założyć osoba pełnoletnia. Usuniesz je w każdej chwili w Ustawieniach…</p>
+      </div>
+    </div>
+  </figure>
+
+</div>
+
+<script>
+  function openDelete() { document.getElementById('del').hidden = false; }
+  function closeDelete() { document.getElementById('del').hidden = true; document.getElementById('pwErr').hidden = true; }
+</script>
+</body>
+</html>
