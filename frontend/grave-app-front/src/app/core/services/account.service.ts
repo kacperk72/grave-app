@@ -8,6 +8,7 @@ import { StoredSession, clearSession, readSession, writeSession } from './sessio
 import { readStorage, writeStorage } from './storage';
 import { LOCAL_SPACE_ID, newSharedSpace } from '../../shared/models/space.model';
 import { LinkedSpace, planAccountLink, spacesToForgetOnLogout } from '../../shared/utils/account-link';
+import { TERMS_VERSION, markTermsAccepted } from '../../shared/legal';
 
 const LAST_LINK_KEY = 'znajdzgroby-last-link';
 const LINK_EVERY_MS = 24 * 60 * 60 * 1000;
@@ -28,6 +29,8 @@ export class AccountService {
 
   async login(email: string, password: string): Promise<{ movedGraves: number }> {
     const res = await this.api.authLogin(email, password);
+    // Zgoda zapisana na koncie obowiązuje na każdym urządzeniu, na którym się zalogujesz
+    if ((res.user.termsVersion ?? 0) >= TERMS_VERSION) markTermsAccepted();
     this.save({ token: res.session, email: res.user.email });
     return this.link();
   }
@@ -38,12 +41,18 @@ export class AccountService {
 
   verify(
     input: { email: string; code: string } | { link: string }
-  ): Promise<{ setupToken: string; email: string }> {
+  ): Promise<{ setupToken: string; email: string; exists: boolean }> {
     return this.api.authVerify(input);
   }
 
-  async setPassword(setupToken: string, password: string): Promise<{ movedGraves: number }> {
-    const res = await this.api.authPassword(setupToken, password);
+  /** `acceptTerms` — wersja regulaminu przy zakładaniu konta (przy nowym haśle istniejącego — brak). */
+  async setPassword(
+    setupToken: string,
+    password: string,
+    acceptTerms?: number
+  ): Promise<{ movedGraves: number }> {
+    const res = await this.api.authPassword(setupToken, password, acceptTerms);
+    if (acceptTerms || (res.user.termsVersion ?? 0) >= TERMS_VERSION) markTermsAccepted();
     this.save({ token: res.session, email: res.user.email });
     return this.link();
   }

@@ -50,6 +50,7 @@ type View =
       </p>
       }
       <app-profile-form
+        [requireTerms]="true"
         submitLabel="Dołącz"
         busyLabel="Dołączam…"
         nameLabel="Jak cię podpisać w rodzinie?"
