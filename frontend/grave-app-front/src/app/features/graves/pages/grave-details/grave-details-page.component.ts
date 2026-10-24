@@ -17,7 +17,7 @@ import { GeolocationService } from '../../../../core/services/geolocation.servic
 import { IconComponent } from '../../../../shared/components/icon.component';
 import { GravePhotoComponent } from '../../../../shared/components/grave-photo.component';
 import { GravePhoto } from '../../../../shared/models/grave.model';
-import { PhotoService } from '../../../../core/services/photo.service';
+import { MAX_PHOTOS_PER_GRAVE, PhotoService } from '../../../../core/services/photo.service';
 import { PhotoViewerComponent } from '../../../../shared/components/photo-viewer.component';
 import { AvatarComponent } from '../../../../shared/components/avatar.component';
 import { SpaceService } from '../../../../core/services/space.service';
@@ -184,6 +184,18 @@ export class GraveDetailsPageComponent {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** Przy komplecie zdjęć zamiast wyboru pliku mówi, co zrobić. */
+  pickPhoto(input: HTMLInputElement): void {
+    if (this.photos().length >= MAX_PHOTOS_PER_GRAVE) {
+      this.photoError.set(
+        `Grób może mieć najwyżej ${MAX_PHOTOS_PER_GRAVE} zdjęcia. Usuń jedno, aby dodać nowe.`
+      );
+      return;
+    }
+    this.photoError.set(null);
+    input.click();
   }
 
   async onPhotoSelected(event: Event): Promise<void> {

@@ -12,6 +12,8 @@ const FULL_MAX_PX = 1600;
 const THUMB_MAX_PX = 480;
 const FULL_QUALITY = 0.82;
 const THUMB_QUALITY = 0.75;
+/** Najwyżej tyle zdjęć na grób — żeby rodzinna mapa nie zapchała darmowego miejsca. Serwer pilnuje tego samego. */
+export const MAX_PHOTOS_PER_GRAVE = 3;
 
 /**
  * Zdjęcia grobów. Bajty trzymamy w telefonie (IndexedDB), więc zdjęcia są widoczne
@@ -66,6 +68,9 @@ export class PhotoService {
   async addPhoto(graveId: string, file: File): Promise<void> {
     const grave = await this.db.getGrave(graveId);
     if (!grave) throw new Error('Nie znaleziono grobu');
+    if (grave.photos.length >= MAX_PHOTOS_PER_GRAVE) {
+      throw new Error(`Grób może mieć najwyżej ${MAX_PHOTOS_PER_GRAVE} zdjęcia`);
+    }
 
     const [full, thumb] = await Promise.all([
       resize(file, FULL_MAX_PX, FULL_QUALITY),
