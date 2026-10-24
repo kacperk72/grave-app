@@ -82,6 +82,10 @@ const PHOTO_VARIANTS = ['full', 'thumb'] as const;
 const PHOTO_TOTAL_LIMIT_BYTES = 900_000_000; // 900 MB dla wszystkich rodzin razem
 const PHOTO_SPACE_LIMIT_BYTES = 500_000_000; // 500 MB (ok. 800 zdjęć) na jedną rodzinną mapę
 const PHOTO_DAILY_WRITE_LIMIT = 900; // zapisy do KV w ciągu doby (UTC)
+// Najwyżej tyle zdjęć na grób — aplikacja nie pozwala dodać więcej, serwer tylko pilnuje
+const MAX_PHOTOS_PER_GRAVE = 3;
+// Telefon wysyła bajty zdjęć przed grobem, więc nowy grób ze zdjęciem jeszcze nie istnieje na serwerze
+const PHOTO_NEW_GRAVES_SLACK = 10;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -323,14 +327,29 @@ async function checkPhotoQuota(env: Env, space: Space, objectKey: string, bytes:
        (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects) AS total,
        (SELECT COALESCE(SUM(bytes), 0) FROM photo_objects WHERE space_id = ?1) AS space,
        (SELECT COALESCE(bytes, 0) FROM photo_objects WHERE key = ?2) AS existing,
-       (SELECT COALESCE(photo_writes, 0) FROM usage_daily WHERE day = ?3) AS writes`
+       (SELECT COALESCE(photo_writes, 0) FROM usage_daily WHERE day = ?3) AS writes,
+       (SELECT COUNT(*) FROM photo_objects WHERE space_id = ?1 AND key LIKE ?4) AS sameVariant,
+       (SELECT COUNT(*) FROM graves WHERE space_id = ?1 AND deleted = 0) AS graves`
   )
-    .bind(space.id, objectKey, currentDay())
-    .first<{ total: number; space: number; existing: number | null; writes: number | null }>();
+    .bind(space.id, objectKey, currentDay(), `%/${objectKey.split('/').pop()}`)
+    .first<{
+      total: number;
+      space: number;
+      existing: number | null;
+      writes: number | null;
+      sameVariant: number;
+      graves: number;
+    }>();
 
   const growth = bytes - (row?.existing ?? 0);
   if ((row?.writes ?? 0) >= PHOTO_DAILY_WRITE_LIMIT) {
     throw new HttpError(429, 'Na dziś wyczerpano limit wysyłania zdjęć. Zdjęcie wyśle się jutro.');
+  }
+  // Serwer nie wie, do którego grobu należą bajty, więc liczy całą mapę: zdjęć (danego wariantu)
+  // nie może być więcej niż grobów × limit na grób. 507 — starsza aplikacja zostawi je w telefonie.
+  const photoCap = ((row?.graves ?? 0) + PHOTO_NEW_GRAVES_SLACK) * MAX_PHOTOS_PER_GRAVE;
+  if (row?.existing === null && (row?.sameVariant ?? 0) >= photoCap) {
+    throw new HttpError(507, `Grób może mieć najwyżej ${MAX_PHOTOS_PER_GRAVE} zdjęcia.`);
   }
   if ((row?.space ?? 0) + growth > PHOTO_SPACE_LIMIT_BYTES) {
     throw new HttpError(507, 'Rodzinna mapa ma już komplet zdjęć (limit 500 MB). Usuń niepotrzebne, aby dodać nowe.');
@@ -359,6 +378,12 @@ function parseChanges(body: unknown): IncomingChange[] {
       }
       if (JSON.stringify(c.data).length > MAX_GRAVE_BYTES) {
         throw new HttpError(413, 'Grób ma za dużo danych');
+      }
+      // Starsza wersja aplikacji mogła dodać więcej zdjęć. Odrzucenie zablokowałoby kolejkę
+      // telefonu, więc przycinamy: nowe zdjęcia są na końcu listy, zostają najstarsze.
+      const data = c.data as { photos?: unknown };
+      if (Array.isArray(data.photos) && data.photos.length > MAX_PHOTOS_PER_GRAVE) {
+        data.photos = data.photos.slice(0, MAX_PHOTOS_PER_GRAVE);
       }
     }
     return { id: c.id, deleted, data: deleted ? null : c.data };
