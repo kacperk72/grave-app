@@ -1,0 +1,1 @@
+import{t}from"./chunk-OSLC7BZ2.js";import{R as e}from"./chunk-4NQT4UI4.js";var r="gravemap-onboarded";function o(){try{return localStorage.getItem(r)==="1"}catch{return!0}}function i(){try{localStorage.setItem(r,"1")}catch{}}var m=()=>o()?!0:e(t).createUrlTree(["/welcome"]);export{i as a,m as b};
